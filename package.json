@@ -1,0 +1,66 @@
+{
+  "name": "physim",
+  "displayName": "Stormworks Physics Sensor Sim",
+  "description": "Simulate Stormworks physics sensor outputs from a 3D gizmo, alongside LifeBoatAPI's microcontroller debugger.",
+  "version": "0.1.1",
+  "publisher": "shannon-toppo",
+  "engines": {
+    "vscode": "^1.62.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "extensionDependencies": [
+    "NameousChangey.lifeboatapi"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      { "command": "physim.open",  "title": "PhySim: Open Physics Sensor Panel" },
+      { "command": "physim.reset", "title": "PhySim: Reset Gizmo" }
+    ],
+    "configuration": {
+      "title": "Stormworks Physics Sensor Sim",
+      "properties": {
+        "physim.port": {
+          "type": "number",
+          "default": 14239,
+          "description": "TCP port the extension listens on for the PhySim Lua client."
+        },
+        "physim.autoOpenOnSimulate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-open the panel when LifeBoatAPI Simulate (F6) starts."
+        },
+        "physim.channelOffset": {
+          "type": "number",
+          "default": 1,
+          "description": "Starting Stormworks input.getNumber channel that PhySim:injectAsInputs writes to (consumes 12 channels)."
+        },
+        "physim.autoInjectLibraryPath": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically add the bundled lua/ folder to lifeboatapi.stormworks.libs.libraryPaths for LifeBoatAPI workspaces."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile && npm run copy-three",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "copy-three": "node ./scripts/copy-three.js",
+    "postinstall": "npm run copy-three"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/three": "^0.160.0",
+    "@types/vscode": "^1.62.0",
+    "three": "^0.160.0",
+    "typescript": "^5.4.0"
+  }
+}

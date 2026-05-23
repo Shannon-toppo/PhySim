@@ -1,0 +1,171 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--vscode-font-family, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+body {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  grid-template-rows: 36px 1fr;
+  grid-template-areas:
+    "toolbar toolbar"
+    "viewport sidebar";
+  height: 100vh;
+  width: 100vw;
+}
+
+#toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+  background: var(--vscode-editor-background);
+}
+
+#toolbar button {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #fff);
+  border: 1px solid transparent;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 2px;
+}
+
+#toolbar button:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+#toolbar button.active {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+}
+
+#toolbar .hint {
+  margin-left: 12px;
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+#viewport {
+  grid-area: viewport;
+  position: relative;
+  overflow: hidden;
+}
+
+#viewport canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+#sidebar {
+  grid-area: sidebar;
+  padding: 8px 10px;
+  overflow-y: auto;
+  border-left: 1px solid var(--vscode-panel-border, #444);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+#sidebar h3 {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.75;
+}
+
+#sidebar h3 small {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.7;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 16px 1fr 64px;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+}
+
+.slider label {
+  font-weight: 600;
+  text-align: center;
+}
+
+.slider input[type=range] {
+  width: 100%;
+}
+
+.slider input[type=number] {
+  width: 100%;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 2px 4px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  text-align: right;
+  box-sizing: border-box;
+}
+
+.slider input[type=number]:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+/* hide native spinner so the field is just a numeric textbox */
+.slider input[type=number]::-webkit-inner-spin-button,
+.slider input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.slider input[type=number] {
+  -moz-appearance: textfield;
+}
+
+#channels {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+}
+
+#channels th, #channels td {
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+}
+
+#channels th {
+  text-align: left;
+  opacity: 0.7;
+  font-weight: 400;
+}
+
+#channels td:nth-child(1) { width: 24px; opacity: 0.6; }
+#channels td:nth-child(2) { text-align: right; }
+#channels td:nth-child(3) { opacity: 0.7; }
+
+.axis-label {
+  position: absolute;
+  color: #fff;
+  font-size: 11px;
+  font-family: var(--vscode-font-family, sans-serif);
+  pointer-events: none;
+  text-shadow: 0 0 4px rgba(0,0,0,0.9);
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(0,0,0,0.35);
+  transform: translate(-50%, -50%);
+}

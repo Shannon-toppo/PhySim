@@ -1,5 +1,7 @@
 # Stormworks Physics Sensor Sim (PhySim)
 
+### [日本語版](https://github.com/Shannon-toppo/PhySim/blob/main/README_jp.md)
+
 A VSCode extension that runs alongside **Stormworks Lua with LifeBoatAPI** and
 lets you drive a virtual `physics sensor` from a 3D gizmo window — so you can
 test PID controllers, INS, autopilot logic etc. without having to launch the
@@ -10,7 +12,7 @@ automatically opens a panel containing:
 
 - a 3D viewport with a translate / rotate gizmo (right-mouse-drag to orbit)
 - sliders for linear and angular velocity
-- a live readout of all 12 channels
+- a live readout of all 17 channels
 
 The values are streamed over a local TCP socket to a small Lua helper
 (`PhySim.lua`) which can either:

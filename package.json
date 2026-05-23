@@ -2,7 +2,7 @@
   "name": "physim",
   "displayName": "Stormworks Physics Sensor Sim",
   "description": "Simulate Stormworks physics sensor outputs from a 3D gizmo, alongside LifeBoatAPI's microcontroller debugger.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "shannon-toppo",
   "engines": {
     "vscode": "^1.62.0"

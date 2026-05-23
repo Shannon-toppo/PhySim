@@ -18,6 +18,30 @@ The values are streamed over a local TCP socket to a small Lua helper
 - inject them into the standard `input.getNumber(N)` table, or
 - be queried directly via `phys:position()`, `phys:rotation()` etc.
 
+## QuickStart
+1. Install [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi).
+2.Download the `.vsix` file from the [Release](https://github.com/Shannon-toppo/PhySim/releases) page and drag and drop it into VS Code.
+3. Open your Stormworks microcontroller project. The extension will offer to add `PhySim/lua/` to `lifeboatapi.stormworks.libs.libraryPaths` automatically.
+4. Add the following to your `script.lua`:
+
+   ```lua
+   -- LifeBoatAPI's sandbox require() discards return values, so modules expose
+   -- themselves as globals. Use the pair below — NOT `phys = require("PhySim"):new()`.
+   require("PhySim")
+   phys = PhySim:new()
+
+   function onLBSimulatorTick(simulator, ticks)
+       phys:update()
+       phys:injectAsInputs(simulator, 1)   -- writes input.getNumber(1..12)
+   end
+
+   function onTick()
+       local px, py, pz = input.getNumber(1), input.getNumber(2), input.getNumber(3)
+       local rx, ry, rz = input.getNumber(4), input.getNumber(5), input.getNumber(6)
+       -- ... use values as if they came from a real physics sensor block ...
+   end
+   ```
+
 ## Coordinate system
 
 Stormworks uses a **left-handed** world coordinate system:
@@ -64,7 +88,7 @@ starting at `startCh` (default `1`):
 "Rotation" unit: 1.0 = one full revolution (2π rad). Tilt ranges [-0.25, +0.25]
 (±90° from horizontal). Compass wraps at ±0.5.
 
-## Quick start
+## Build and Use
 
 1. Install [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi).
 2. Build & launch PhySim (Extension Development Host: open this folder in VSCode and press **F5**, or `npx vsce package` and install the produced `.vsix`).
@@ -118,7 +142,5 @@ After `require("PhySim")`, the global `PhySim` is the class table.
 
 ## Out of scope (v0.1)
 
-- Connecting to a running game instance over the network
-- Gravity / accelerometer / collision sensors
-- Recording & playback of physics state
+- Recording & playback of physics Sensor state
 - Multiple microcontroller debug sessions sharing one panel

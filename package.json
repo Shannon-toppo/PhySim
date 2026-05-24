@@ -40,6 +40,16 @@
           "default": true,
           "description": "Auto-open the panel when LifeBoatAPI Simulate (F6) starts."
         },
+        "physim.panel.openLocation": {
+          "type": "string",
+          "enum": ["beside", "newWindow"],
+          "enumDescriptions": [
+            "Open the panel beside the active editor in the current window (default).",
+            "Open the panel in a new floating window (requires VSCode 1.85+)."
+          ],
+          "default": "beside",
+          "description": "Where to place the Physics Sensor panel when it opens."
+        },
         "physim.channelOffset": {
           "type": "number",
           "default": 1,

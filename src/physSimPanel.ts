@@ -9,23 +9,44 @@ interface FromWebview {
   angularVelocity: [number, number, number];
 }
 
+type OpenLocation = "beside" | "newWindow";
+
+interface PanelSettings {
+  openLocation: OpenLocation;
+}
+
+function readPanelSettings(): PanelSettings {
+  const cfg = vscode.workspace.getConfiguration();
+  const raw = cfg.get<string>("physim.panel.openLocation", "beside");
+  const openLocation: OpenLocation = raw === "newWindow" ? "newWindow" : "beside";
+  return { openLocation };
+}
+
 export class PhysSimPanelManager {
   private panel: vscode.WebviewPanel | null = null;
   private disposables: vscode.Disposable[] = [];
 
   constructor(private ctx: vscode.ExtensionContext, private server: PhysServer) {}
 
-  openOrReveal(): void {
+  async openOrReveal(): Promise<void> {
+    const { openLocation } = readPanelSettings();
+
     if (this.panel) {
-      this.panel.reveal(vscode.ViewColumn.Beside, true);
+      // Don't force a column when in a new window — reveal(Beside) would yank it back.
+      if (openLocation === "newWindow") this.panel.reveal(undefined, true);
+      else this.panel.reveal(vscode.ViewColumn.Beside, true);
       return;
     }
 
     const mediaRoot = vscode.Uri.joinPath(this.ctx.extensionUri, "media");
+    // For newWindow we create in the active column with focus, then move the editor
+    // to a new auxiliary window. Beside-mode keeps focus on the editor (preserveFocus).
+    const viewColumn = openLocation === "newWindow" ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside;
+    const preserveFocus = openLocation !== "newWindow";
     this.panel = vscode.window.createWebviewPanel(
       "physim.gizmo",
       "Physics Sensor",
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+      { viewColumn, preserveFocus },
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -34,6 +55,16 @@ export class PhysSimPanelManager {
     );
 
     this.panel.webview.html = this.buildHtml(this.panel.webview);
+
+    if (openLocation === "newWindow") {
+      try {
+        await vscode.commands.executeCommand("workbench.action.moveEditorToNewWindow");
+      } catch (err: any) {
+        vscode.window.showWarningMessage(
+          `PhySim: failed to move panel to a new window (${err?.message ?? err}). Requires VSCode 1.85+.`
+        );
+      }
+    }
 
     this.disposables.push(
       this.panel.webview.onDidReceiveMessage((msg: FromWebview) => {

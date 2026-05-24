@@ -22,9 +22,9 @@ The values are streamed over a local TCP socket to a small Lua helper
 
 ## QuickStart
 1. Install [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi).
-2.Download the `.vsix` file from the [Release](https://github.com/Shannon-toppo/PhySim/releases) page and drag and drop it into VS Code.
+2. Download the `.vsix` file from the [Release](https://github.com/Shannon-toppo/PhySim/releases) page and drag and drop it into VS Code.
 3. Open your Stormworks microcontroller project. The extension will offer to add `PhySim/lua/` to `lifeboatapi.stormworks.libs.libraryPaths` automatically.
-4. Add the following to your `script.lua`:
+4. Add the following to your `Mymicrocontroller.lua`:
 
    ```lua
    -- LifeBoatAPI's sandbox require() discards return values, so modules expose
@@ -58,9 +58,7 @@ The gizmo viewport renders Three.js' right-handed coordinates with the camera
 placed so that +Z visually extends **into the screen** (away from the viewer),
 matching the intuitive "north is forward" layout.
 
-Rotations are reported in radians using Three.js' Euler XYZ order. If your
-controller expects a specific sign convention (Stormworks does not document one
-authoritatively), negate the relevant component in your Lua code.
+Rotations are reported in radians using Three.js' Euler XYZ order.
 
 ## Channel layout
 
@@ -116,7 +114,8 @@ starting at `startCh` (default `1`):
    ```
 
 5. Press **F6** to start the LifeBoatAPI simulator. The PhySim panel opens
-   beside it. Drag the gizmo — your Lua sees the values change live.
+   beside it (or in a separate window if `physim.panel.openLocation` is set to
+   `newWindow`). Drag the gizmo — your Lua sees the values change live.
 
 ## Lua API
 
@@ -139,10 +138,11 @@ After `require("PhySim")`, the global `PhySim` is the class table.
 |--------------------------------------|---------|----------------------------------------------------------------|
 | `physim.port`                        | 14239   | TCP port the extension listens on.                             |
 | `physim.autoOpenOnSimulate`          | true    | Open the panel when LifeBoatAPI's "Run Simulator" starts.      |
+| `physim.panel.openLocation`          | beside  | Where to place the panel when it opens. `beside` = split beside the active editor; `newWindow` = open in a separate floating window (requires VSCode 1.85+). |
 | `physim.channelOffset`               | 1       | Starting CH for `injectAsInputs` (purely advisory).            |
 | `physim.autoInjectLibraryPath`       | true    | Add `<extension>/lua/` to `lifeboatapi.stormworks.libs.libraryPaths`. |
 
 ## Out of scope (v0.1)
 
-- Recording & playback of physics Sensor state
+- Scripted sensor manipulation
 - Multiple microcontroller debug sessions sharing one panel

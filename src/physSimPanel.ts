@@ -24,12 +24,22 @@ function readPanelSettings(): PanelSettings {
 
 export class PhysSimPanelManager {
   private panel: vscode.WebviewPanel | null = null;
+  private panelLocation: OpenLocation | null = null;
   private disposables: vscode.Disposable[] = [];
 
   constructor(private ctx: vscode.ExtensionContext, private server: PhysServer) {}
 
   async openOrReveal(): Promise<void> {
     const { openLocation } = readPanelSettings();
+
+    // If the setting changed since the panel was opened, dispose it so the new value takes effect.
+    // (A panel in an auxiliary window won't move back to the main window via reveal(Beside).)
+    if (this.panel && this.panelLocation !== openLocation) {
+      const old = this.panel;
+      this.panel = null;
+      this.panelLocation = null;
+      old.dispose();
+    }
 
     if (this.panel) {
       // Don't force a column when in a new window — reveal(Beside) would yank it back.
@@ -39,12 +49,17 @@ export class PhysSimPanelManager {
     }
 
     const mediaRoot = vscode.Uri.joinPath(this.ctx.extensionUri, "media");
-    // For newWindow we create in the active column with focus, then move the editor
-    // to a new auxiliary window. Beside-mode keeps focus on the editor (preserveFocus).
+    // VSCode persists editor placement by viewType — a panel previously moved to an
+    // auxiliary window is restored there on the next createWebviewPanel, even when we
+    // request ViewColumn.Beside. Using a distinct viewType per mode keeps that state
+    // from bleeding across modes.
+    const viewType = openLocation === "newWindow" ? "physim.gizmo.newWindow" : "physim.gizmo.beside";
+    // For newWindow we create with focus so the move-editor command targets this panel.
+    // For beside we keep focus on the editor.
     const viewColumn = openLocation === "newWindow" ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside;
     const preserveFocus = openLocation !== "newWindow";
-    this.panel = vscode.window.createWebviewPanel(
-      "physim.gizmo",
+    const created = vscode.window.createWebviewPanel(
+      viewType,
       "Physics Sensor",
       { viewColumn, preserveFocus },
       {
@@ -53,8 +68,9 @@ export class PhysSimPanelManager {
         localResourceRoots: [mediaRoot]
       }
     );
-
-    this.panel.webview.html = this.buildHtml(this.panel.webview);
+    this.panel = created;
+    this.panelLocation = openLocation;
+    created.webview.html = this.buildHtml(created.webview);
 
     if (openLocation === "newWindow") {
       try {
@@ -66,8 +82,11 @@ export class PhysSimPanelManager {
       }
     }
 
-    this.disposables.push(
-      this.panel.webview.onDidReceiveMessage((msg: FromWebview) => {
+    // Bind disposables to this specific panel instance so a subsequent dispose
+    // can't wipe state belonging to a newer panel.
+    const localDisposables: vscode.Disposable[] = [];
+    localDisposables.push(
+      created.webview.onDidReceiveMessage((msg: FromWebview) => {
         if (msg && msg.type === "state") {
           const state: PhysState = {
             position: msg.position,
@@ -79,11 +98,15 @@ export class PhysSimPanelManager {
         }
       })
     );
+    this.disposables.push(...localDisposables);
 
-    this.panel.onDidDispose(() => {
-      this.disposables.forEach(d => d.dispose());
-      this.disposables = [];
-      this.panel = null;
+    created.onDidDispose(() => {
+      localDisposables.forEach(d => d.dispose());
+      if (this.panel === created) {
+        this.panel = null;
+        this.panelLocation = null;
+        this.disposables = [];
+      }
       // zero out the state on disconnect so the Lua side doesn't keep stale values
       this.server.broadcast(ZERO_STATE);
     });

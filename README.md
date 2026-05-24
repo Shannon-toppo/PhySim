@@ -82,7 +82,7 @@ starting at `startCh` (default `1`):
 | 13  | LinearVelocityABS     | m/s         | √(vx²+vy²+vz²) × 60                            |
 | 14  | AngularVelocityABS    | RPS         | √(ax²+ay²+az²) × 60 / 2π                       |
 | 15  | Tilt.z                | rotation    | tilt of local +Z (forward) from horizontal     |
-| 16  | Tilt.x                | rotation    | tilt of local +X (right) from horizontal       |
+| 16  | Tilt.x                | rotation    | tilt of local -X (Left) from horizontal       |
 | 17  | compassBearing        | rotation    | N=0, W=+0.25, S=±0.5, E=-0.25 (CCW from above) |
 
 "Rotation" unit: 1.0 = one full revolution (2π rad). Tilt ranges [-0.25, +0.25]

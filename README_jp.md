@@ -97,7 +97,7 @@ Stormworksは**左手系**ワールド座標系を使用しています:
 1. [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi) をインストールします。
 2. PhySimをビルドして起動します（Extension Development Host: このフォルダをVSCodeで開いて **F5** を押すか、`npx vsce package` で生成された `.vsix` をインストールします）。
 3. Stormworksマイコンプロジェクトを開きます。拡張機能が `lifeboatapi.stormworks.libs.libraryPaths` に `PhySim/lua/` を自動追加するか確認します。
-4. `script.lua` に以下を追加します:
+4. `Mymicrocontroller.lua` に以下を追加します:
 
    ```lua
    -- LifeBoatAPIのサンドボックス require() は戻り値を破棄するため、
@@ -108,7 +108,7 @@ Stormworksは**左手系**ワールド座標系を使用しています:
 
    function onLBSimulatorTick(simulator, ticks)
        phys:update()
-       phys:injectAsInputs(simulator, 1)   -- input.getNumber(1..12) に書き込む
+       phys:injectAsInputs(simulator, 1)   -- input.getNumber(1..17) に書き込む
    end
 
    function onTick()
@@ -133,7 +133,7 @@ Stormworksは**左手系**ワールド座標系を使用しています:
 | `phys:rotation()`                     | `rx, ry, rz` (rad)                                   |
 | `phys:velocity()`                     | `vx, vy, vz` (m/tick)                                |
 | `phys:angularVelocity()`              | `ax, ay, az` (rad/tick)                              |
-| `phys:injectAsInputs(simulator, n?)`  | CH `n..n+11` を `input.getNumber(...)` に書き込む    |
+| `phys:injectAsInputs(simulator, n?)`  | CH `n..n+16` を `input.getNumber(...)` に書き込む    |
 | `phys:close()`                        | ソケットを閉じる                                      |
 
 ## 拡張機能の設定

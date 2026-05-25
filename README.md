@@ -34,7 +34,7 @@ The values are streamed over a local TCP socket to a small Lua helper
 
    function onLBSimulatorTick(simulator, ticks)
        phys:update()
-       phys:injectAsInputs(simulator, 1)   -- writes input.getNumber(1..12)
+       phys:injectAsInputs(simulator, 1)   -- writes input.getNumber(1..17)
    end
 
    function onTick()
@@ -93,7 +93,7 @@ starting at `startCh` (default `1`):
 1. Install [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi).
 2. Build & launch PhySim (Extension Development Host: open this folder in VSCode and press **F5**, or `npx vsce package` and install the produced `.vsix`).
 3. Open your Stormworks microcontroller project. The extension will offer to add `PhySim/lua/` to `lifeboatapi.stormworks.libs.libraryPaths` automatically.
-4. Add the following to your `script.lua`:
+4. Add the following to your `Mymicrocontroller.lua`:
 
    ```lua
    -- LifeBoatAPI's sandbox require() discards return values, so modules expose

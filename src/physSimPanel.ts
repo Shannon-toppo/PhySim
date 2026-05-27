@@ -1,12 +1,33 @@
 import * as vscode from "vscode";
 import { PhysServer, PhysState, ZERO_STATE } from "./physServer";
 
-interface FromWebview {
+type Triple = [number, number, number];
+
+interface StateMsg {
   type: "state";
-  position: [number, number, number];
-  rotation: [number, number, number];
-  velocity: [number, number, number];
-  angularVelocity: [number, number, number];
+  position: Triple;
+  rotation: Triple;
+  velocity: Triple;
+  angularVelocity: Triple;
+}
+interface PresetSaveMsg { type: "presetSave"; name: string; state: PhysState; }
+interface PresetLoadMsg { type: "presetLoad"; name: string; }
+interface PresetDeleteMsg { type: "presetDelete"; name: string; }
+interface PresetListRequestMsg { type: "presetListRequest"; }
+type FromWebview = StateMsg | PresetSaveMsg | PresetLoadMsg | PresetDeleteMsg | PresetListRequestMsg;
+
+type PresetMap = { [name: string]: PhysState };
+const PRESETS_KEY = "physim.presets";
+const MAX_PRESET_NAME_LEN = 64;
+
+function isTriple(v: unknown): v is Triple {
+  return Array.isArray(v) && v.length === 3 && v.every(n => typeof n === "number" && Number.isFinite(n));
+}
+function sanitizePresetState(s: unknown): PhysState | null {
+  if (!s || typeof s !== "object") return null;
+  const o = s as Record<string, unknown>;
+  if (!isTriple(o.position) || !isTriple(o.rotation) || !isTriple(o.velocity) || !isTriple(o.angularVelocity)) return null;
+  return { position: o.position, rotation: o.rotation, velocity: o.velocity, angularVelocity: o.angularVelocity };
 }
 
 type OpenLocation = "beside" | "newWindow";
@@ -86,8 +107,9 @@ export class PhysSimPanelManager {
     // can't wipe state belonging to a newer panel.
     const localDisposables: vscode.Disposable[] = [];
     localDisposables.push(
-      created.webview.onDidReceiveMessage((msg: FromWebview) => {
-        if (msg && msg.type === "state") {
+      created.webview.onDidReceiveMessage(async (msg: FromWebview) => {
+        if (!msg || typeof (msg as { type?: unknown }).type !== "string") return;
+        if (msg.type === "state") {
           const state: PhysState = {
             position: msg.position,
             rotation: msg.rotation,
@@ -95,6 +117,36 @@ export class PhysSimPanelManager {
             angularVelocity: msg.angularVelocity
           };
           this.server.broadcast(state);
+          return;
+        }
+        if (msg.type === "presetListRequest") {
+          this.postPresetList(created);
+          return;
+        }
+        if (msg.type === "presetSave") {
+          const name = typeof msg.name === "string" ? msg.name.trim().slice(0, MAX_PRESET_NAME_LEN) : "";
+          const state = sanitizePresetState(msg.state);
+          if (!name || !state) return;
+          const presets = this.getPresets();
+          presets[name] = state;
+          await this.setPresets(presets);
+          this.postPresetList(created);
+          return;
+        }
+        if (msg.type === "presetLoad") {
+          if (typeof msg.name !== "string") return;
+          const entry = this.getPresets()[msg.name];
+          if (entry) created.webview.postMessage({ type: "presetLoaded", state: entry });
+          return;
+        }
+        if (msg.type === "presetDelete") {
+          if (typeof msg.name !== "string") return;
+          const presets = this.getPresets();
+          if (!(msg.name in presets)) return;
+          delete presets[msg.name];
+          await this.setPresets(presets);
+          this.postPresetList(created);
+          return;
         }
       })
     );
@@ -118,6 +170,20 @@ export class PhysSimPanelManager {
 
   close(): void {
     if (this.panel) this.panel.dispose();
+  }
+
+  private getPresets(): PresetMap {
+    const raw = this.ctx.globalState.get<PresetMap>(PRESETS_KEY, {});
+    return raw && typeof raw === "object" ? { ...raw } : {};
+  }
+
+  private setPresets(presets: PresetMap): Thenable<void> {
+    return this.ctx.globalState.update(PRESETS_KEY, presets);
+  }
+
+  private postPresetList(panel: vscode.WebviewPanel): void {
+    const names = Object.keys(this.getPresets()).sort((a, b) => a.localeCompare(b));
+    panel.webview.postMessage({ type: "presetList", names });
   }
 
   private buildHtml(webview: vscode.Webview): string {
@@ -166,6 +232,16 @@ export class PhysSimPanelManager {
   <div id="viewport"></div>
 
   <div id="sidebar">
+    <h3>Position <small>(m)</small></h3>
+    <div class="numrow"><label>X</label><input type="number" id="px-num" step="0.1" value="0" /></div>
+    <div class="numrow"><label>Y</label><input type="number" id="py-num" step="0.1" value="0" /></div>
+    <div class="numrow"><label>Z</label><input type="number" id="pz-num" step="0.1" value="0" /></div>
+
+    <h3>Rotation <small>(rad)</small></h3>
+    <div class="numrow"><label>X</label><input type="number" id="rx-num" step="0.01" value="0" /></div>
+    <div class="numrow"><label>Y</label><input type="number" id="ry-num" step="0.01" value="0" /></div>
+    <div class="numrow"><label>Z</label><input type="number" id="rz-num" step="0.01" value="0" /></div>
+
     <h3>Linear velocity <small>(m/tick)</small></h3>
     <div class="slider"><label>X</label><input type="range" id="vx" min="-10" max="10" step="0.01" value="0" /><input type="number" id="vx-num" step="0.01" value="0" /></div>
     <div class="slider"><label>Y</label><input type="range" id="vy" min="-10" max="10" step="0.01" value="0" /><input type="number" id="vy-num" step="0.01" value="0" /></div>
@@ -175,6 +251,17 @@ export class PhysSimPanelManager {
     <div class="slider"><label>X</label><input type="range" id="ax" min="-3.1416" max="3.1416" step="0.001" value="0" /><input type="number" id="ax-num" step="0.001" value="0" /></div>
     <div class="slider"><label>Y</label><input type="range" id="ay" min="-3.1416" max="3.1416" step="0.001" value="0" /><input type="number" id="ay-num" step="0.001" value="0" /></div>
     <div class="slider"><label>Z</label><input type="range" id="az" min="-3.1416" max="3.1416" step="0.001" value="0" /><input type="number" id="az-num" step="0.001" value="0" /></div>
+
+    <h3>Presets</h3>
+    <div class="preset-row">
+      <input type="text" id="preset-name" placeholder="preset name" maxlength="64" />
+      <button id="preset-save" title="Save current pose &amp; velocity">Save</button>
+    </div>
+    <div class="preset-row">
+      <select id="preset-list"></select>
+      <button id="preset-load" title="Load selected preset">Load</button>
+      <button id="preset-delete" title="Delete selected preset" class="danger">Del</button>
+    </div>
 
     <h3>Channels</h3>
     <table id="channels">

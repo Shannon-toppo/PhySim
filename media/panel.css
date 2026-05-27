@@ -99,9 +99,41 @@ body {
   margin: 3px 0;
 }
 
-.slider label {
+.numrow {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+}
+
+.slider label,
+.numrow label {
   font-weight: 600;
   text-align: center;
+}
+
+.numrow input[type=number] {
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 2px 4px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  text-align: right;
+  box-sizing: border-box;
+}
+.numrow input[type=number]:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+.numrow input[type=number]::-webkit-inner-spin-button,
+.numrow input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.numrow input[type=number] {
+  -moz-appearance: textfield;
 }
 
 .slider input[type=range] {
@@ -156,6 +188,45 @@ body {
 #channels td:nth-child(1) { width: 24px; opacity: 0.6; }
 #channels td:nth-child(2) { text-align: right; }
 #channels td:nth-child(3) { opacity: 0.7; }
+
+.preset-row {
+  display: flex;
+  gap: 4px;
+  margin: 3px 0;
+  align-items: stretch;
+}
+.preset-row > input[type=text],
+.preset-row > select {
+  flex: 1;
+  min-width: 0;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 2px 4px;
+  font-size: 11px;
+  box-sizing: border-box;
+}
+.preset-row > input[type=text]:focus,
+.preset-row > select:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+.preset-row button {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #fff);
+  border: 1px solid transparent;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  border-radius: 2px;
+}
+.preset-row button:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+.preset-row button.danger:hover {
+  background: var(--vscode-errorForeground, #c5443a);
+  color: #fff;
+}
 
 .axis-label {
   position: absolute;

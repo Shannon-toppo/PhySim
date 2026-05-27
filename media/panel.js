@@ -25,8 +25,18 @@ for (const k of SLIDER_KEYS) {
   sliders[k]   = document.getElementById(k);
   numInputs[k] = document.getElementById(k + "-num");
 }
+const POSE_KEYS = ["px", "py", "pz", "rx", "ry", "rz"];
+const poseInputs = {};
+for (const k of POSE_KEYS) poseInputs[k] = document.getElementById(k + "-num");
 const channelOut = {};
 for (let i = 1; i <= 17; i++) channelOut[i] = document.getElementById("c" + i);
+
+// preset UI elements
+const presetNameEl   = document.getElementById("preset-name");
+const presetListEl   = document.getElementById("preset-list");
+const presetSaveBtn  = document.getElementById("preset-save");
+const presetLoadBtn  = document.getElementById("preset-load");
+const presetDeleteBtn = document.getElementById("preset-delete");
 
 // --- Three.js scene ----------------------------------------------------------
 const scene = new THREE.Scene();
@@ -171,9 +181,34 @@ function resetGizmo() {
     sliders[k].value   = "0";
     numInputs[k].value = "0";
   }
+  for (const k of POSE_KEYS) poseInputs[k].value = "0";
   scheduleSend();
 }
 resetBtn.addEventListener("click", resetGizmo);
+
+// Sync helpers: poseInputs <-> targetGroup. Avoid re-entry via _syncing.
+function syncPoseFromInputs() {
+  if (_syncing) return;
+  _syncing = true;
+  const px = parseFloat(poseInputs.px.value); if (Number.isFinite(px)) targetGroup.position.x = px;
+  const py = parseFloat(poseInputs.py.value); if (Number.isFinite(py)) targetGroup.position.y = py;
+  const pz = parseFloat(poseInputs.pz.value); if (Number.isFinite(pz)) targetGroup.position.z = pz;
+  const rx = parseFloat(poseInputs.rx.value); if (Number.isFinite(rx)) targetGroup.rotation.x = rx;
+  const ry = parseFloat(poseInputs.ry.value); if (Number.isFinite(ry)) targetGroup.rotation.y = ry;
+  const rz = parseFloat(poseInputs.rz.value); if (Number.isFinite(rz)) targetGroup.rotation.z = rz;
+  _syncing = false;
+}
+function syncInputsFromPose() {
+  if (_syncing) return;
+  _syncing = true;
+  poseInputs.px.value = targetGroup.position.x.toFixed(3);
+  poseInputs.py.value = targetGroup.position.y.toFixed(3);
+  poseInputs.pz.value = targetGroup.position.z.toFixed(3);
+  poseInputs.rx.value = targetGroup.rotation.x.toFixed(4);
+  poseInputs.ry.value = targetGroup.rotation.y.toFixed(4);
+  poseInputs.rz.value = targetGroup.rotation.z.toFixed(4);
+  _syncing = false;
+}
 
 // keyboard shortcuts inside the panel
 window.addEventListener("keydown", e => {
@@ -189,6 +224,8 @@ window.addEventListener("message", e => {
   if (!msg) return;
   if (msg.type === "reset") resetGizmo();
   else if (msg.type === "setMode") setMode(msg.mode);
+  else if (msg.type === "presetList") renderPresetList(Array.isArray(msg.names) ? msg.names : []);
+  else if (msg.type === "presetLoaded") applyPresetState(msg.state);
 });
 
 // --- Sliders & number inputs (two-way binding) ------------------------------
@@ -214,10 +251,15 @@ for (const k of SLIDER_KEYS) {
   sliders[k].addEventListener("input", () => { syncNumFromSlider(k); scheduleSend(); });
   numInputs[k].addEventListener("input", () => { syncSliderFromNum(k);  scheduleSend(); });
 }
+for (const k of POSE_KEYS) {
+  poseInputs[k].addEventListener("input", () => { syncPoseFromInputs(); scheduleSend(); });
+}
 
-// transform changes also schedule a send
+// transform changes also schedule a send, and mirror the new gizmo state back
+// into the position/rotation number inputs so typed and dragged input stay
+// visibly in sync.
 transform.addEventListener("change", scheduleSend);
-transform.addEventListener("objectChange", scheduleSend);
+transform.addEventListener("objectChange", () => { syncInputsFromPose(); scheduleSend(); });
 
 // --- State streaming ---------------------------------------------------------
 let pending = false;
@@ -294,6 +336,63 @@ function sendState() {
   refreshChannelTable(s);
   vscode.postMessage({ type: "state", ...s });
 }
+
+// --- Presets ----------------------------------------------------------------
+// Preset persistence lives on the extension side (globalState). The webview
+// just sends Save/Load/Delete intents and re-renders the dropdown when the
+// extension echoes back the current list.
+function renderPresetList(names) {
+  const prev = presetListEl.value;
+  presetListEl.innerHTML = "";
+  for (const name of names) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    presetListEl.appendChild(opt);
+  }
+  // try to keep the user's previous selection
+  if (names.indexOf(prev) !== -1) presetListEl.value = prev;
+}
+
+function isTriple(v) {
+  return Array.isArray(v) && v.length === 3 && v.every(n => typeof n === "number" && Number.isFinite(n));
+}
+function applyPresetState(s) {
+  if (!s || !isTriple(s.position) || !isTriple(s.rotation) || !isTriple(s.velocity) || !isTriple(s.angularVelocity)) return;
+  targetGroup.position.set(s.position[0], s.position[1], s.position[2]);
+  targetGroup.rotation.set(s.rotation[0], s.rotation[1], s.rotation[2]);
+  numInputs.vx.value = String(s.velocity[0]);
+  numInputs.vy.value = String(s.velocity[1]);
+  numInputs.vz.value = String(s.velocity[2]);
+  numInputs.ax.value = String(s.angularVelocity[0]);
+  numInputs.ay.value = String(s.angularVelocity[1]);
+  numInputs.az.value = String(s.angularVelocity[2]);
+  for (const k of SLIDER_KEYS) syncSliderFromNum(k);
+  syncInputsFromPose();
+  scheduleSend();
+}
+
+presetSaveBtn.addEventListener("click", () => {
+  const name = presetNameEl.value.trim();
+  if (!name) return;
+  vscode.postMessage({ type: "presetSave", name, state: readState() });
+});
+presetLoadBtn.addEventListener("click", () => {
+  const name = presetListEl.value;
+  if (!name) return;
+  vscode.postMessage({ type: "presetLoad", name });
+});
+presetDeleteBtn.addEventListener("click", () => {
+  const name = presetListEl.value;
+  if (!name) return;
+  vscode.postMessage({ type: "presetDelete", name });
+});
+presetNameEl.addEventListener("keydown", e => {
+  if (e.key === "Enter") presetSaveBtn.click();
+});
+
+// initial preset list fetch
+vscode.postMessage({ type: "presetListRequest" });
 
 // --- Resize & render loop ---------------------------------------------------
 function resize() {

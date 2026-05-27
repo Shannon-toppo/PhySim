@@ -146,3 +146,25 @@ After `require("PhySim")`, the global `PhySim` is the class table.
 
 - Scripted sensor manipulation
 - Multiple microcontroller debug sessions sharing one panel
+
+## Planned features
+
+The following are under consideration. None are implemented yet — listed order does not imply priority.
+
+1. **Direct numeric input for position / rotation + preset save/recall**
+   Today position and rotation can only be set by dragging the gizmo. Adding numeric input fields (like the velocity sliders already have) and the ability to save named states such as "level flight" or "45° bank" would remove the need to manually re-align the gizmo for repeated tests.
+
+2. **Continuous physics mode (integrate velocity into position)**
+   Currently velocity and position are independent: setting a velocity does not move the gizmo. A toggle that adds `velocity * dt` to position each tick would let PID controllers and attitude-stabilization MCs be debugged against time-varying CH1–3, much closer to in-game behavior.
+
+3. **Trail / velocity-vector visualization**
+   Render the last N ticks of the object's path as a trail in the 3D scene, plus an arrow showing the current velocity vector. Especially useful in combination with the continuous physics mode above.
+
+4. **Multiple physics sensor support**
+   Some microcontrollers use more than one physics sensor block. Allowing multiple gizmo targets, each mapped to its own channel range, would cover this use case.
+
+5. **Gamepad input**
+   Drive the gizmo with an attached gamepad / joystick. More fluid than mouse dragging for dynamic scenarios.
+
+6. **CSV logging of channel values**
+   Stream CH1–17 values to a CSV file for offline analysis or graph plotting.

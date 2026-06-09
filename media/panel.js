@@ -18,7 +18,13 @@ const vscode = acquireVsCodeApi();
 const viewport = document.getElementById("viewport");
 const modeButtons = Array.from(document.querySelectorAll("#toolbar button.mode"));
 const resetBtn = document.getElementById("reset");
-const SLIDER_KEYS = ["vx", "vy", "vz", "ax", "ay", "az"];
+const simBtn = document.getElementById("simulate");
+// vx-vz: linear velocity, ax-az: angular velocity (CH7-12, sent on the wire).
+// lax-laz / aax-aaz: linear / angular acceleration — webview-only, they drive
+// the velocities during simulation but are never sent as channels.
+const VEL_KEYS   = ["vx", "vy", "vz", "ax", "ay", "az"];
+const ACCEL_KEYS = ["lax", "lay", "laz", "aax", "aay", "aaz"];
+const SLIDER_KEYS = [...VEL_KEYS, ...ACCEL_KEYS];
 const sliders = {};
 const numInputs = {};
 for (const k of SLIDER_KEYS) {
@@ -175,6 +181,7 @@ function setMode(mode) {
 modeButtons.forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
 
 function resetGizmo() {
+  setSimulating(false);
   targetGroup.position.set(0, 0, 0);
   targetGroup.rotation.set(0, 0, 0);
   for (const k of SLIDER_KEYS) {
@@ -185,6 +192,63 @@ function resetGizmo() {
   scheduleSend();
 }
 resetBtn.addEventListener("click", resetGizmo);
+
+// --- Simulation mode ---------------------------------------------------------
+// When enabled, position/rotation are advanced from the velocities and the
+// velocities from the accelerations, on a fixed Stormworks tick (1/60 s).
+// An accumulator decouples integration from the (variable) rAF cadence, so the
+// motion is frame-rate independent and matches the rate the Lua side sees.
+const TICK_DT_MS = 1000 / 60;
+const MAX_CATCHUP_MS = 250;          // clamp after a stall so we don't fast-forward
+let simulating = false;
+let lastSimTime = 0;
+let tickAccumulator = 0;
+
+function setSimulating(on) {
+  if (simulating === on) return;
+  simulating = on;
+  simBtn.classList.toggle("active", on);
+  simBtn.textContent = on ? "⏸ Pause" : "▶ Simulate";
+  if (on) { lastSimTime = performance.now(); tickAccumulator = 0; }
+}
+simBtn.addEventListener("click", () => setSimulating(!simulating));
+
+function integrateOneTick() {
+  // semi-implicit Euler: bump velocity by acceleration, then advance by velocity.
+  const vx = readNum("vx") + readNum("lax");
+  const vy = readNum("vy") + readNum("lay");
+  const vz = readNum("vz") + readNum("laz");
+  const ax = readNum("ax") + readNum("aax");
+  const ay = readNum("ay") + readNum("aay");
+  const az = readNum("az") + readNum("aaz");
+  writeNum("vx", vx); writeNum("vy", vy); writeNum("vz", vz);
+  writeNum("ax", ax); writeNum("ay", ay); writeNum("az", az);
+
+  targetGroup.position.x += vx;
+  targetGroup.position.y += vy;
+  targetGroup.position.z += vz;
+  targetGroup.rotation.x += ax;
+  targetGroup.rotation.y += ay;
+  targetGroup.rotation.z += az;
+}
+
+function stepSimulation() {
+  const now = performance.now();
+  let elapsed = now - lastSimTime;
+  lastSimTime = now;
+  if (elapsed > MAX_CATCHUP_MS) elapsed = MAX_CATCHUP_MS;
+  tickAccumulator += elapsed;
+  let ticks = 0;
+  while (tickAccumulator >= TICK_DT_MS) {
+    tickAccumulator -= TICK_DT_MS;
+    integrateOneTick();
+    ticks++;
+  }
+  if (ticks > 0) {
+    syncInputsFromPose();
+    sendState();
+  }
+}
 
 // Sync helpers: poseInputs <-> targetGroup. Avoid re-entry via _syncing.
 function syncPoseFromInputs() {
@@ -216,6 +280,7 @@ window.addEventListener("keydown", e => {
   if (e.key === "w" || e.key === "W") setMode("translate");
   else if (e.key === "e" || e.key === "E") setMode("rotate");
   else if (e.key === "r" || e.key === "R") resetGizmo();
+  else if (e.key === " ") { e.preventDefault(); setSimulating(!simulating); }
 });
 
 // extension -> webview
@@ -255,6 +320,24 @@ for (const k of POSE_KEYS) {
   poseInputs[k].addEventListener("input", () => { syncPoseFromInputs(); scheduleSend(); });
 }
 
+// Per-field reset buttons (the small ↺ next to each number box). Zero a single
+// value without touching the others.
+function resetField(k) {
+  if (POSE_KEYS.includes(k)) {
+    poseInputs[k].value = "0";
+    syncPoseFromInputs();
+  } else if (SLIDER_KEYS.includes(k)) {
+    numInputs[k].value = "0";
+    sliders[k].value = "0";
+  } else {
+    return;
+  }
+  scheduleSend();
+}
+for (const btn of document.querySelectorAll(".rst")) {
+  btn.addEventListener("click", () => resetField(btn.dataset.reset));
+}
+
 // transform changes also schedule a send, and mirror the new gizmo state back
 // into the position/rotation number inputs so typed and dragged input stay
 // visibly in sync.
@@ -274,6 +357,12 @@ function readNum(k) {
   // range); fall back to the slider only if it's empty/invalid.
   const n = parseFloat(numInputs[k].value);
   return Number.isFinite(n) ? n : (parseFloat(sliders[k].value) || 0);
+}
+function writeNum(k, n) {
+  // String(n) round-trips a JS number exactly, so the input stays the precise
+  // source of truth; the slider just tracks it visually (and auto-clamps).
+  numInputs[k].value = String(n);
+  sliders[k].value = String(n);
 }
 function readState() {
   return {
@@ -419,6 +508,7 @@ function updateLabels() {
 }
 
 function loop() {
+  if (simulating) stepSimulation();
   orbit.update();
   updateLabels();
   renderer.render(scene, camera);

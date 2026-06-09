@@ -93,7 +93,7 @@ body {
 
 .slider {
   display: grid;
-  grid-template-columns: 16px 1fr 64px;
+  grid-template-columns: 16px 1fr 52px 20px;
   align-items: center;
   gap: 6px;
   margin: 3px 0;
@@ -101,10 +101,29 @@ body {
 
 .numrow {
   display: grid;
-  grid-template-columns: 16px 1fr;
+  grid-template-columns: 16px 1fr 20px;
   align-items: center;
   gap: 6px;
   margin: 3px 0;
+}
+
+/* per-field reset-to-zero button */
+.rst {
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  line-height: 1;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #fff);
+  opacity: 0.65;
+}
+.rst:hover {
+  opacity: 1;
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
 }
 
 .slider label,

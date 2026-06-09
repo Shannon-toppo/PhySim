@@ -226,6 +226,7 @@ export class PhysSimPanelManager {
     <button data-mode="translate" class="mode active" title="Translate (W)">Move</button>
     <button data-mode="rotate"    class="mode"        title="Rotate (E)">Rotate</button>
     <button id="reset" title="Reset position &amp; rotation">Reset</button>
+    <button id="simulate" title="Integrate velocity &amp; acceleration over time (Space)">&#9654; Simulate</button>
     <span class="hint">Drag the gizmo. Left-drag = orbit, right/wheel-drag = pan, scroll = zoom.</span>
   </div>
 
@@ -233,24 +234,34 @@ export class PhysSimPanelManager {
 
   <div id="sidebar">
     <h3>Position <small>(m)</small></h3>
-    <div class="numrow"><label>X</label><input type="number" id="px-num" step="0.1" value="0" /></div>
-    <div class="numrow"><label>Y</label><input type="number" id="py-num" step="0.1" value="0" /></div>
-    <div class="numrow"><label>Z</label><input type="number" id="pz-num" step="0.1" value="0" /></div>
+    <div class="numrow"><label>X</label><input type="number" id="px-num" step="0.1" value="0" /><button class="rst" data-reset="px" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="numrow"><label>Y</label><input type="number" id="py-num" step="0.1" value="0" /><button class="rst" data-reset="py" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="numrow"><label>Z</label><input type="number" id="pz-num" step="0.1" value="0" /><button class="rst" data-reset="pz" title="Reset to 0" tabindex="-1">&#8634;</button></div>
 
     <h3>Rotation <small>(rad)</small></h3>
-    <div class="numrow"><label>X</label><input type="number" id="rx-num" step="0.01" value="0" /></div>
-    <div class="numrow"><label>Y</label><input type="number" id="ry-num" step="0.01" value="0" /></div>
-    <div class="numrow"><label>Z</label><input type="number" id="rz-num" step="0.01" value="0" /></div>
+    <div class="numrow"><label>X</label><input type="number" id="rx-num" step="0.01" value="0" /><button class="rst" data-reset="rx" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="numrow"><label>Y</label><input type="number" id="ry-num" step="0.01" value="0" /><button class="rst" data-reset="ry" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="numrow"><label>Z</label><input type="number" id="rz-num" step="0.01" value="0" /><button class="rst" data-reset="rz" title="Reset to 0" tabindex="-1">&#8634;</button></div>
 
     <h3>Linear velocity <small>(m/tick)</small></h3>
-    <div class="slider"><label>X</label><input type="range" id="vx" min="-10" max="10" step="0.01" value="0" /><input type="number" id="vx-num" step="0.01" value="0" /></div>
-    <div class="slider"><label>Y</label><input type="range" id="vy" min="-10" max="10" step="0.01" value="0" /><input type="number" id="vy-num" step="0.01" value="0" /></div>
-    <div class="slider"><label>Z</label><input type="range" id="vz" min="-10" max="10" step="0.01" value="0" /><input type="number" id="vz-num" step="0.01" value="0" /></div>
+    <div class="slider"><label>X</label><input type="range" id="vx" min="-10" max="10" step="0.01" value="0" /><input type="number" id="vx-num" step="0.01" value="0" /><button class="rst" data-reset="vx" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="slider"><label>Y</label><input type="range" id="vy" min="-10" max="10" step="0.01" value="0" /><input type="number" id="vy-num" step="0.01" value="0" /><button class="rst" data-reset="vy" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="slider"><label>Z</label><input type="range" id="vz" min="-10" max="10" step="0.01" value="0" /><input type="number" id="vz-num" step="0.01" value="0" /><button class="rst" data-reset="vz" title="Reset to 0" tabindex="-1">&#8634;</button></div>
 
     <h3>Angular velocity <small>(rad/tick)</small></h3>
-    <div class="slider"><label>X</label><input type="range" id="ax" min="-3.1416" max="3.1416" step="0.001" value="0" /><input type="number" id="ax-num" step="0.001" value="0" /></div>
-    <div class="slider"><label>Y</label><input type="range" id="ay" min="-3.1416" max="3.1416" step="0.001" value="0" /><input type="number" id="ay-num" step="0.001" value="0" /></div>
-    <div class="slider"><label>Z</label><input type="range" id="az" min="-3.1416" max="3.1416" step="0.001" value="0" /><input type="number" id="az-num" step="0.001" value="0" /></div>
+    <div class="slider"><label>X</label><input type="range" id="ax" min="-3.1416" max="3.1416" step="0.001" value="0" /><input type="number" id="ax-num" step="0.001" value="0" /><button class="rst" data-reset="ax" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="slider"><label>Y</label><input type="range" id="ay" min="-3.1416" max="3.1416" step="0.001" value="0" /><input type="number" id="ay-num" step="0.001" value="0" /><button class="rst" data-reset="ay" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="slider"><label>Z</label><input type="range" id="az" min="-3.1416" max="3.1416" step="0.001" value="0" /><input type="number" id="az-num" step="0.001" value="0" /><button class="rst" data-reset="az" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+
+    <h3>Linear acceleration <small>(m/tick&sup2;)</small></h3>
+    <div class="slider"><label>X</label><input type="range" id="lax" min="-1" max="1" step="0.001" value="0" /><input type="number" id="lax-num" step="0.001" value="0" /><button class="rst" data-reset="lax" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="slider"><label>Y</label><input type="range" id="lay" min="-1" max="1" step="0.001" value="0" /><input type="number" id="lay-num" step="0.001" value="0" /><button class="rst" data-reset="lay" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="slider"><label>Z</label><input type="range" id="laz" min="-1" max="1" step="0.001" value="0" /><input type="number" id="laz-num" step="0.001" value="0" /><button class="rst" data-reset="laz" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+
+    <h3>Angular acceleration <small>(rad/tick&sup2;)</small></h3>
+    <div class="slider"><label>X</label><input type="range" id="aax" min="-0.3142" max="0.3142" step="0.0001" value="0" /><input type="number" id="aax-num" step="0.0001" value="0" /><button class="rst" data-reset="aax" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="slider"><label>Y</label><input type="range" id="aay" min="-0.3142" max="0.3142" step="0.0001" value="0" /><input type="number" id="aay-num" step="0.0001" value="0" /><button class="rst" data-reset="aay" title="Reset to 0" tabindex="-1">&#8634;</button></div>
+    <div class="slider"><label>Z</label><input type="range" id="aaz" min="-0.3142" max="0.3142" step="0.0001" value="0" /><input type="number" id="aaz-num" step="0.0001" value="0" /><button class="rst" data-reset="aaz" title="Reset to 0" tabindex="-1">&#8634;</button></div>
 
     <h3>Presets</h3>
     <div class="preset-row">

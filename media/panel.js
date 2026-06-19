@@ -19,6 +19,9 @@ const viewport = document.getElementById("viewport");
 const modeButtons = Array.from(document.querySelectorAll("#toolbar button.mode"));
 const resetBtn = document.getElementById("reset");
 const simBtn = document.getElementById("simulate");
+const recBtn = document.getElementById("record");
+const playBtn = document.getElementById("play");
+const recCountEl = document.getElementById("rec-count");
 // vx-vz: linear velocity, ax-az: angular velocity (CH7-12, sent on the wire).
 // lax-laz / aax-aaz: linear / angular acceleration — webview-only, they drive
 // the velocities during simulation but are never sent as channels.
@@ -206,6 +209,7 @@ let tickAccumulator = 0;
 
 function setSimulating(on) {
   if (simulating === on) return;
+  if (on && playing) setPlaying(false);
   simulating = on;
   simBtn.classList.toggle("active", on);
   simBtn.textContent = on ? "⏸ Pause" : "▶ Simulate";
@@ -230,6 +234,8 @@ function integrateOneTick() {
   targetGroup.rotation.x += ax;
   targetGroup.rotation.y += ay;
   targetGroup.rotation.z += az;
+
+  if (recording) recordBuffer.push(readState());
 }
 
 function stepSimulation() {
@@ -247,6 +253,90 @@ function stepSimulation() {
   if (ticks > 0) {
     syncInputsFromPose();
     sendState();
+    if (recording) { updateRecCount(); updatePlayBtn(); }
+  }
+}
+
+// --- Recording & playback ---------------------------------------------------
+// Each captured frame is the same shape as readState() — pos/rot/vel/angVel.
+// The buffer lives in memory only; closing the panel discards it.
+const recordBuffer = [];
+let recording = false;
+let playing = false;
+let playIndex = 0;
+let lastPlayTime = 0;
+let playAccumulator = 0;
+
+function updateRecCount() {
+  const n = recordBuffer.length;
+  if (n === 0) { recCountEl.textContent = ""; return; }
+  const secs = (n / TICKS_PER_SEC).toFixed(2);
+  recCountEl.textContent = playing
+    ? `${playIndex}/${n} (${secs}s)`
+    : `${n} frames (${secs}s)`;
+}
+function updatePlayBtn() {
+  playBtn.disabled = recordBuffer.length === 0 && !playing;
+}
+
+function setRecording(on) {
+  if (recording === on) return;
+  if (on && playing) return;
+  recording = on;
+  if (on) { recordBuffer.length = 0; playIndex = 0; }
+  recBtn.classList.toggle("recording", on);
+  recBtn.textContent = on ? "■ Stop Rec" : "● Rec";
+  updateRecCount();
+  updatePlayBtn();
+}
+recBtn.addEventListener("click", () => setRecording(!recording));
+
+function applyFrame(f) {
+  targetGroup.position.set(f.position[0], f.position[1], f.position[2]);
+  targetGroup.rotation.set(f.rotation[0], f.rotation[1], f.rotation[2]);
+  writeNum("vx", f.velocity[0]);
+  writeNum("vy", f.velocity[1]);
+  writeNum("vz", f.velocity[2]);
+  writeNum("ax", f.angularVelocity[0]);
+  writeNum("ay", f.angularVelocity[1]);
+  writeNum("az", f.angularVelocity[2]);
+}
+
+function setPlaying(on) {
+  if (playing === on) return;
+  if (on) {
+    if (recordBuffer.length === 0) return;
+    if (recording) setRecording(false);
+    if (simulating) setSimulating(false);
+    playIndex = 0;
+    lastPlayTime = performance.now();
+    playAccumulator = 0;
+  }
+  playing = on;
+  playBtn.classList.toggle("active", on);
+  playBtn.textContent = on ? "■ Stop" : "▶ Play";
+  updateRecCount();
+}
+playBtn.addEventListener("click", () => setPlaying(!playing));
+
+function stepPlayback() {
+  const now = performance.now();
+  let elapsed = now - lastPlayTime;
+  lastPlayTime = now;
+  if (elapsed > MAX_CATCHUP_MS) elapsed = MAX_CATCHUP_MS;
+  playAccumulator += elapsed;
+  let advanced = false;
+  while (playAccumulator >= TICK_DT_MS) {
+    playAccumulator -= TICK_DT_MS;
+    if (playIndex >= recordBuffer.length) { setPlaying(false); break; }
+    applyFrame(recordBuffer[playIndex]);
+    playIndex++;
+    advanced = true;
+  }
+  if (advanced) {
+    syncInputsFromPose();
+    sendState();
+    updateRecCount();
   }
 }
 
@@ -509,6 +599,7 @@ function updateLabels() {
 
 function loop() {
   if (simulating) stepSimulation();
+  else if (playing) stepPlayback();
   orbit.update();
   updateLabels();
   renderer.render(scene, camera);

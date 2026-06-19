@@ -49,6 +49,23 @@ body {
   color: var(--vscode-button-foreground, #fff);
 }
 
+#toolbar button.recording {
+  background: var(--vscode-errorForeground, #c5443a);
+  color: #fff;
+}
+
+#toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+#toolbar .rec-count {
+  margin-left: 4px;
+  opacity: 0.7;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
 #toolbar .hint {
   margin-left: 12px;
   opacity: 0.7;

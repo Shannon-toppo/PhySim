@@ -227,6 +227,9 @@ export class PhysSimPanelManager {
     <button data-mode="rotate"    class="mode"        title="Rotate (E)">Rotate</button>
     <button id="reset" title="Reset position &amp; rotation">Reset</button>
     <button id="simulate" title="Integrate velocity &amp; acceleration over time (Space)">&#9654; Simulate</button>
+    <button id="record" title="Record every tick during simulation">&#9679; Rec</button>
+    <button id="play" title="Play back the recorded motion" disabled>&#9654; Play</button>
+    <span id="rec-count" class="rec-count"></span>
     <span class="hint">Drag the gizmo. Left-drag = orbit, right/wheel-drag = pan, scroll = zoom.</span>
   </div>
 

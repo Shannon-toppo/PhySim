@@ -143,14 +143,15 @@ function buildAirplane(group) {
   const redTip   = new THREE.Mesh(tipGeom, matRed);   redTip.position.set(  1.30, 0, 0.05); group.add(redTip);
   const greenTip = new THREE.Mesh(tipGeom, matGreen); greenTip.position.set(-1.30, 0, 0.05); group.add(greenTip);
 
-  // horizontal stabiliser
+  // horizontal stabiliser — rear edge flush with fuselage tail (z = -0.9)
   const hstab = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.04, 0.28), matBody);
-  hstab.position.set(0, 0, -0.82);
+  hstab.position.set(0, 0, -0.76);
   group.add(hstab);
 
-  // vertical tail fin — thin slab across X, standing up in Y, extending in Z
+  // vertical tail fin — thin slab across X, standing up in Y, extending in Z.
+  // Rear edge flush with fuselage tail (z = -0.9).
   const vfin = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.4, 0.4), matFin);
-  vfin.position.set(0, 0.25, -0.75);
+  vfin.position.set(0, 0.25, -0.7);
   group.add(vfin);
 }
 

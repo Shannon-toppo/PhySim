@@ -141,8 +141,22 @@ After `require("PhySim")`, the global `PhySim` is the class table.
 | `physim.port`                        | 14239   | TCP port the extension listens on.                             |
 | `physim.autoOpenOnSimulate`          | true    | Open the panel when LifeBoatAPI's "Run Simulator" starts.      |
 | `physim.panel.openLocation`          | beside  | Where to place the panel when it opens. `beside` = split beside the active editor; `newWindow` = open in a separate floating window (requires VSCode 1.85+). |
-| `physim.channelOffset`               | 1       | Starting CH for `injectAsInputs` (purely advisory).            |
 | `physim.autoInjectLibraryPath`       | true    | Add `<extension>/lua/` to `lifeboatapi.stormworks.libs.libraryPaths`. |
+
+## Development & tests
+
+```bash
+npm install          # also vendors three.js into media/three/
+npm run compile      # extension host (tsc → out/)
+npm run lint         # eslint
+npm run check:media  # strict JSDoc typecheck of the webview modules
+npm test             # node:test suites in test/
+```
+
+The test suite covers the wire protocol (encode → real `PhySim.lua` parser
+round-trip, running Lua 5.3 via [fengari](https://fengari.io/)) and the
+CH13–17 derived-channel math, including a **JS⇄Lua parity test** that keeps
+`media/channels.js` and `PhySim.lua:injectAsInputs` in agreement.
 
 ## Out of scope (v0.1)
 

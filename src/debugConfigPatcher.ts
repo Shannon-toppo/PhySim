@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import * as path from "path";
+import { normalize } from "./pathUtils";
 
 // LifeBoatAPI's SimulatorSandbox builds its own restricted `require` that only
 // resolves Lua files under the project's root directories (the args passed to
@@ -33,10 +33,6 @@ const INJECTION = [
 
 const SANDBOX_LINE_RE =
   /(local\s+sandboxEnv\s*=\s*LifeBoatAPI\.Tools\.SimulatorSandbox\.createSandbox\(rootDirs\)\s*)/;
-
-function normalize(p: string): string {
-  return path.resolve(p).toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
-}
 
 export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
   constructor(private readonly extensionUri: vscode.Uri) {}
@@ -73,9 +69,9 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
       }
       const patched = text.replace(SANDBOX_LINE_RE, "$1" + INJECTION);
       await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(patched));
-    } catch (err: any) {
+    } catch (err) {
       vscode.window.showWarningMessage(
-        "PhySim: failed to patch _simulator.lua: " + (err?.message ?? String(err))
+        "PhySim: failed to patch _simulator.lua: " + (err instanceof Error ? err.message : String(err))
       );
     }
     return config;

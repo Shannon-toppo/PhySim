@@ -14,12 +14,12 @@ export const ZERO_STATE: PhysState = {
   angularVelocity: [0, 0, 0]
 };
 
-function fmt(n: number): string {
+export function fmt(n: number): string {
   if (!Number.isFinite(n)) return "0";
   return Number(n.toFixed(6)).toString();
 }
 
-function encode(state: PhysState): Buffer {
+export function encode(state: PhysState): Buffer {
   const v = [
     "PHYS",
     fmt(state.position[0]), fmt(state.position[1]), fmt(state.position[2]),

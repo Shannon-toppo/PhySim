@@ -1,10 +1,17 @@
 .vscode/**
 .vscode-test/**
+.claude/**
+CLAUDE.md
+worklog.md
 src/**
 scripts/**
+test/**
 node_modules/**
 **/tsconfig.json
+tsconfig.media.json
+eslint.config.mjs
 **/.eslintrc.json
+media/package.json
 **/*.map
 **/*.ts
 .gitignore

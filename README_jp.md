@@ -145,8 +145,22 @@ Stormworksは**左手系**ワールド座標系を使用しています:
 | `physim.port`                        | 14239      | 拡張機能がリッスンするTCPポート                                         |
 | `physim.autoOpenOnSimulate`          | true       | LifeBoatAPIの「Run Simulator」起動時にパネルを自動で開く               |
 | `physim.panel.openLocation`          | beside     | パネルを開く位置。`beside` = アクティブエディタの隣に分離、`newWindow` = 別ウィンドウで開く（VSCode 1.85以降が必要） |
-| `physim.channelOffset`               | 1          | `injectAsInputs` の開始CH（参考値）                                    |
 | `physim.autoInjectLibraryPath`       | true       | `<extension>/lua/` を `lifeboatapi.stormworks.libs.libraryPaths` に追加 |
+
+## 開発とテスト
+
+```bash
+npm install          # three.js を media/three/ に配置（postinstall）
+npm run compile      # 拡張ホスト側ビルド (tsc → out/)
+npm run lint         # eslint
+npm run check:media  # WebView モジュールの strict JSDoc 型検査
+npm test             # test/ 以下の node:test スイート
+```
+
+テストはワイヤプロトコル（encode → 実物の `PhySim.lua` パーサでの往復。
+Lua 5.3 は [fengari](https://fengari.io/) で実行）と CH13–17 の派生値計算を
+カバーします。**JS⇄Lua パリティテスト**が `media/channels.js` と
+`PhySim.lua:injectAsInputs` の数式一致を機械的に保証します。
 
 ## スコープ外（v0.1）
 

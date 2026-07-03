@@ -51,22 +51,55 @@ Lua 側 `injectAsInputs` と JS 側 `refreshChannelTable` の両方に同じ式�
 - **解決**：`DebugConfigurationProvider` 内で `config.arg` に拡張の `lua/` ディレクトリを直接追加。設定ファイル経由ではなく runtime で渡るため、どのワークスペースでも追加設定不要で動作する
 - 補完用に `onDidChangeWorkspaceFolders` でも `ensureInjected` を再実行
 
+## リファクタリング（v0.3.0, 2026-07）
+
+6 フェーズの挙動保存リファクタリングを実施。事前調査の結論は「デッドコードはほぼゼロ、
+本当の負債は二重管理数式・テスト不在・モノリス WebView」だったため、削除よりも保護と分割に注力。
+
+1. **ツーリング**：ESLint (flat config、correctness ルールのみ)、`tsconfig.media.json`
+   (WebView JS の strict JSDoc 型検査)、`node:test`。vsix から `.claude/` や開発ドキュメントを除外。
+2. **テスト**：プロトコル往復・CH13–17 golden 値・**JS⇄Lua パリティテスト**。
+   Lua 実行系は **fengari**（Lua 5.3 セマンティクスの純 JS 実装）を採用 — lua-debug と同じ
+   5.3 系で、Windows にネイティブ依存なし。`PhySim.lua` は無改変のままテスト可能
+   （`_physim_socket` をスタブし `PhySim._buf` を直接駆動）。
+3. **デッドウェイト除去**：未使用設定 `physim.channelOffset` を削除（コードから一切読まれていなかった）。
+   `normalize()` を `src/pathUtils.ts` に一本化。π の `3.1416` リテラルを `Math.PI.toFixed(4)` 化。
+4. **panel.js 分割**：612 行のモノリスを 9 モジュールへ（vscodeApi / channels / dom / scene /
+   pose / messaging / simulation / presets / panel=エントリ）。CSP nonce はエントリ script から
+   module graph 全体へ伝播するため `buildHtml` 変更ゼロ。`_syncing` ガードは単一フラグのまま
+   `dom.js` の `syncGuard` に移設（分割すると再入挙動が変わる）。
+5. **HTML テンプレート抽出**：インライン HTML 約 100 行を `media/panel.html` へ（`{{token}}`
+   置換方式・未解決トークンは throw）。スタブだった panel.html が「正」になった。
+   注意：テンプレート内の HTML コメントに二重波括弧のリテラルを書くと leftover 検知が誤爆する。
+6. **ドキュメント同期**：README EN/JP・CLAUDE.md 更新、version 0.3.0。
+
 ## ファイル構成（最終）
 ```
 PhySim/
-├── package.json / tsconfig.json / .vscodeignore
-├── README.md / worklog.md
+├── package.json / tsconfig.json / tsconfig.media.json / eslint.config.mjs / .vscodeignore
+├── README.md / README_jp.md / worklog.md
 ├── src/
 │   ├── extension.ts              # activate / debug 監視
-│   ├── physServer.ts             # TCP サーバ (14239)
-│   ├── physSimPanel.ts           # WebView 管理
+│   ├── physServer.ts             # TCP サーバ (14239)、encode/fmt は export（テスト用）
+│   ├── physSimPanel.ts           # WebView 管理（media/panel.html を読み込んで {{token}} 置換）
 │   ├── libraryPathInjector.ts    # 設定注入（補完用）
-│   └── debugConfigPatcher.ts     # _simulator.lua patch + config.arg 注入
+│   ├── debugConfigPatcher.ts     # _simulator.lua patch + config.arg 注入
+│   └── pathUtils.ts              # normalize() 共有ユーティリティ
 ├── media/
-│   ├── panel.html / panel.css / panel.js   # Three.js シーン + UI
-│   └── three/                              # vendored Three.js
+│   ├── panel.html                # WebView マークアップの正（テンプレート）
+│   ├── panel.css
+│   ├── panel.js                  # エントリ（配線のみ）
+│   ├── vscodeApi.js / channels.js / dom.js / scene.js / pose.js
+│   ├── messaging.js / simulation.js / presets.js
+│   ├── globals.d.ts              # acquireVsCodeApi 型宣言
+│   └── three/                    # vendored Three.js
 ├── lua/
 │   └── PhySim.lua                # Lua 側ライブラリ（シングルトン）
+├── test/
+│   ├── helpers/luaRunner.mjs     # fengari ハーネス
+│   ├── protocol.test.mjs / channels.test.mjs / roundtrip.test.mjs
+│   ├── parity.test.mjs           # JS⇄Lua CH13–17 一致検証
+│   └── pathUtils.test.mjs
 └── scripts/
     └── copy-three.js             # postinstall で Three.js 配置
 ```

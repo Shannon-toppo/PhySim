@@ -2,7 +2,7 @@
   "name": "physim",
   "displayName": "Stormworks Physics Sensor Sim",
   "description": "Simulate Stormworks physics sensor outputs from a 3D gizmo, alongside LifeBoatAPI's microcontroller debugger.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "shannon-toppo",
   "engines": {
     "vscode": "^1.62.0"
@@ -24,8 +24,14 @@
   ],
   "contributes": {
     "commands": [
-      { "command": "physim.open",  "title": "PhySim: Open Physics Sensor Panel" },
-      { "command": "physim.reset", "title": "PhySim: Reset Gizmo" }
+      {
+        "command": "physim.open",
+        "title": "PhySim: Open Physics Sensor Panel"
+      },
+      {
+        "command": "physim.reset",
+        "title": "PhySim: Reset Gizmo"
+      }
     ],
     "configuration": {
       "title": "Stormworks Physics Sensor Sim",
@@ -42,18 +48,16 @@
         },
         "physim.panel.openLocation": {
           "type": "string",
-          "enum": ["beside", "newWindow"],
+          "enum": [
+            "beside",
+            "newWindow"
+          ],
           "enumDescriptions": [
             "Open the panel beside the active editor in the current window (default).",
             "Open the panel in a new floating window (requires VSCode 1.85+)."
           ],
           "default": "beside",
           "description": "Where to place the Physics Sensor panel when it opens."
-        },
-        "physim.channelOffset": {
-          "type": "number",
-          "default": 1,
-          "description": "Starting Stormworks input.getNumber channel that PhySim:injectAsInputs writes to (consumes 12 channels)."
         },
         "physim.autoInjectLibraryPath": {
           "type": "boolean",
@@ -67,14 +71,22 @@
     "vscode:prepublish": "npm run compile && npm run copy-three",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "lint": "eslint .",
+    "check:media": "tsc -p tsconfig.media.json",
+    "test": "npm run compile && node --test \"test/**/*.test.mjs\"",
     "copy-three": "node ./scripts/copy-three.js",
     "postinstall": "npm run copy-three"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^18.0.0",
     "@types/three": "^0.160.0",
     "@types/vscode": "^1.62.0",
+    "eslint": "^10.6.0",
+    "fengari": "^0.1.5",
+    "globals": "^17.7.0",
     "three": "^0.160.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.62.1"
   }
 }

@@ -1,14 +1,10 @@
 import * as vscode from "vscode";
-import * as path from "path";
+import { normalize } from "./pathUtils";
 
 const LIB_KEY = "libraryPaths";
 const LIB_SECTION = "lifeboatapi.stormworks.libs";
 const MC_FLAG = "lifeboatapi.stormworks.isMicrocontrollerProject";
 const ADDON_FLAG = "lifeboatapi.stormworks.isAddonProject";
-
-function normalize(p: string): string {
-  return path.resolve(p).toLowerCase().replace(/\\/g, "/");
-}
 
 export async function ensureInjected(ctx: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration();
@@ -38,7 +34,7 @@ export async function ensureInjected(ctx: vscode.ExtensionContext): Promise<void
       // fallback: workspace-wide
       try {
         await libCfg.update(LIB_KEY, next, vscode.ConfigurationTarget.Workspace);
-      } catch (err) {
+      } catch {
         vscode.window.showWarningMessage(
           "PhySim: could not add lua/ to lifeboatapi libraryPaths. Add it manually: " + luaDir
         );

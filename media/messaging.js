@@ -3,6 +3,7 @@
 // channel table so the display always matches what was sent.
 
 import { vscode } from "./vscodeApi.js";
+import { normalizeAngle } from "./channels.js";
 import { readNum, refreshChannelTable } from "./dom.js";
 import { targetGroup } from "./scene.js";
 
@@ -13,11 +14,21 @@ export function scheduleSend() {
   requestAnimationFrame(() => { pending = false; sendState(); });
 }
 
-/** @returns {import("./channels.js").PhysStateLike} */
+/**
+ * The gizmo's own Euler angles are unbounded (the integrator keeps adding to
+ * them, and the pose inputs accept any number), so rotation is normalized to
+ * [-π, π) here — CH4–6, the channel table and the wire all see the wrapped
+ * value. lua/PhySim.lua wraps again on parse, which is idempotent.
+ * @returns {import("./channels.js").PhysStateLike}
+ */
 export function readState() {
   return {
     position: [targetGroup.position.x, targetGroup.position.y, targetGroup.position.z],
-    rotation: [targetGroup.rotation.x, targetGroup.rotation.y, targetGroup.rotation.z],
+    rotation: [
+      normalizeAngle(targetGroup.rotation.x),
+      normalizeAngle(targetGroup.rotation.y),
+      normalizeAngle(targetGroup.rotation.z)
+    ],
     velocity: [readNum("vx"), readNum("vy"), readNum("vz")],
     angularVelocity: [readNum("ax"), readNum("ay"), readNum("az")]
   };

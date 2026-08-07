@@ -4,7 +4,7 @@
 // formulas before extraction).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveChannels, TICKS_PER_SEC, TWO_PI } from "../media/channels.js";
+import { deriveChannels, normalizeAngle, TICKS_PER_SEC, TWO_PI } from "../media/channels.js";
 
 const TOL = 1e-12;
 const HALF_PI = Math.PI / 2;
@@ -20,6 +20,27 @@ function close(a, b, tol = TOL) {
 test("constants", () => {
   assert.equal(TICKS_PER_SEC, 60);
   assert.equal(TWO_PI, Math.PI * 2);
+});
+
+test("CH4–6: normalizeAngle wraps into [-π, π)", () => {
+  close(normalizeAngle(0), 0);
+  close(normalizeAngle(1.5), 1.5);
+  close(normalizeAngle(-1.5), -1.5);
+  close(normalizeAngle(Math.PI), -Math.PI);        // upper bound is exclusive
+  close(normalizeAngle(-Math.PI), -Math.PI);
+  close(normalizeAngle(TWO_PI), 0, 1e-15);
+  close(normalizeAngle(-TWO_PI), 0, 1e-15);
+  close(normalizeAngle(TWO_PI + 1), 1, 1e-15);
+  close(normalizeAngle(-TWO_PI - 1), -1, 1e-15);
+  close(normalizeAngle(100 * TWO_PI + 0.25), 0.25, 1e-12);
+  for (const a of [123.456, -654.321, 42.42, 1e6, -1e6]) {
+    const n = normalizeAngle(a);
+    assert.ok(n >= -Math.PI && n < Math.PI, `${a} → ${n} out of range`);
+    close(Math.sin(n), Math.sin(a), 1e-9);
+    close(Math.cos(n), Math.cos(a), 1e-9);
+  }
+  assert.ok(Number.isNaN(normalizeAngle(NaN)));
+  assert.equal(normalizeAngle(Infinity), Infinity);
 });
 
 test("zero state derives all zeros", () => {

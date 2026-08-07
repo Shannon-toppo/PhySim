@@ -5,7 +5,7 @@
 --   "%04d" .. "PHYS|posX|posY|posZ|rotX|rotY|rotZ|velX|velY|velZ|angVelX|angVelY|angVelZ"
 --
 -- Coordinates are Stormworks left-handed: +X East, +Y Up, +Z North. Rotations
--- are Euler XYZ in radians. Velocities are per tick.
+-- are Euler XYZ in radians, normalized to [-π, π). Velocities are per tick.
 --
 -- LifeBoatAPI's sandbox does NOT expose `setmetatable` (in-game runtime
 -- doesn't have it either), and its `require` discards return values. So this
@@ -96,6 +96,14 @@ function PhySim:_tryConnect()
     return true
 end
 
+-- Wrap an angle into [-π, π). CH4-6 must stay bounded however far the panel's
+-- simulation has spun; component-wise wrapping is exact for Euler angles since
+-- each axis' rotation is 2π-periodic. Lua's `%` is floor-modulo, so this needs
+-- no sign fix-up — the JS twin is normalizeAngle() in media/channels.js.
+local function _normAngle(a)
+    return (a + math.pi) % (2 * math.pi) - math.pi
+end
+
 local function _split(s, sep)
     local t, i = {}, 1
     for part in string.gmatch(s, "([^" .. sep .. "]+)") do
@@ -145,9 +153,11 @@ function PhySim:update()
                 self._state.position[1]        = tonumber(v[2])  or 0
                 self._state.position[2]        = tonumber(v[3])  or 0
                 self._state.position[3]        = tonumber(v[4])  or 0
-                self._state.rotation[1]        = tonumber(v[5])  or 0
-                self._state.rotation[2]        = tonumber(v[6])  or 0
-                self._state.rotation[3]        = tonumber(v[7])  or 0
+                -- normalized on arrival so rotation() and CH4-6 agree even if
+                -- an unwrapped value ever reaches us
+                self._state.rotation[1]        = _normAngle(tonumber(v[5])  or 0)
+                self._state.rotation[2]        = _normAngle(tonumber(v[6])  or 0)
+                self._state.rotation[3]        = _normAngle(tonumber(v[7])  or 0)
                 self._state.velocity[1]        = tonumber(v[8])  or 0
                 self._state.velocity[2]        = tonumber(v[9])  or 0
                 self._state.velocity[3]        = tonumber(v[10]) or 0
@@ -174,7 +184,7 @@ local _TWO_PI        = 2 * math.pi
 ---
 ---Channel layout (relative to startCh, 1-based):
 ---    1-3  : position X/Y/Z          [m]
----    4-6  : rotation X/Y/Z (Euler XYZ) [rad]
+---    4-6  : rotation X/Y/Z (Euler XYZ) [rad, normalized to -π..π)
 ---    7-9  : linear velocity X/Y/Z   [m/tick]
 ---   10-12 : angular velocity X/Y/Z  [rad/tick]
 ---   13    : |linear velocity|       [m/s]    (slider value × 60)

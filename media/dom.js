@@ -31,6 +31,12 @@ export const recBtn = mustGet("record");
 export const playBtn = /** @type {HTMLButtonElement} */ (mustGet("play"));
 export const recCountEl = mustGet("rec-count");
 
+// Monitor stand-in for LifeBoatAPI's Windows-only simulator exe (macOS).
+// Starts hidden; mcScreen.js unhides it once a screenConfig arrives.
+export const monitorsSection = mustGet("monitors");
+export const monitorsList = mustGet("monitors-list");
+export const monitorZoomEl = /** @type {HTMLSelectElement} */ (mustGet("monitor-zoom"));
+
 // vx-vz: linear velocity, ax-az: angular velocity (CH7-12, sent on the wire).
 // lax-laz / aax-aaz: linear / angular acceleration — webview-only, they drive
 // the velocities during simulation but are never sent as channels.

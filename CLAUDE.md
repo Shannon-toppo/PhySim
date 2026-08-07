@@ -18,6 +18,7 @@ npm run lint               # eslint . (flat config, correctness rules only — n
 npm run check:media        # tsc -p tsconfig.media.json — strict checkJs over media/*.js (JSDoc types)
 npm test                   # compile + node --test test/**/*.test.mjs
 npx vsce package           # build physim-x.y.z.vsix for distribution
+scripts/build-luasocket-macos.sh  # rebuilds the committed universal (arm64+x86_64) luasocket/darwin/*.so — only needed when changing luasocket/Lua versions
 ```
 
 Debugging the extension itself: open the folder in VSCode and press **F5**. `.vscode/launch.json` is already wired (Extension Development Host, preLaunchTask = `npm: compile`).
@@ -31,6 +32,7 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `roundtrip.test.mjs` — Node `encode()` bytes fed through `PhySim.lua`'s real `update()` parser and read back (frame splits, concatenation, corrupt-prefix resync).
 - `parity.test.mjs` — **the CH13–17 desync guard**: runs `media/channels.js` and `PhySim.lua:injectAsInputs` over the same vectors and asserts agreement to 1e-9. Extend its vector table whenever the derived-channel math changes.
 - Lua runs inside **fengari** (Lua 5.3 semantics in pure JS — same major version as lua-debug) via `test/helpers/luaRunner.mjs`, which stubs `_physim_socket` and drives `PhySim._buf` directly. No system Lua install needed.
+- `simstub.test.mjs` — the shared `frame.ts` framing (prefix encode/decode, split/concat/corrupt-prefix resync) plus `simStubServer.ts`'s protocol handling: `SCREENCONFIG` → `SCREENSIZE`, portrait swap, `TICKEND` buffering/flush, draw-command parsing, and `sendTouch()`'s wire shape.
 
 ## Architecture — three boundaries, three runtimes
 
@@ -47,6 +49,8 @@ Extension host (Node, TypeScript)  ──  TCP 14239 (length-prefixed text)  ─
                                                                           (user microcontroller code)
 ```
 
+On macOS, a second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) — stands in for LifeBoatAPI's Windows-only `STORMWORKS_Simulator.exe`, which the sandboxed Lua otherwise connects to directly. It answers the same `SimulatorConnection.lua` protocol and forwards parsed screen config/draw commands to the WebView, where `media/mcScreen.js` renders the microcontroller's monitors on `<canvas>`. `src/frame.ts` holds the `%04d`-length-prefixed framing shared by both TCP servers.
+
 1. **`media/`** — the WebView, split into ES modules loaded via relative imports from the entry `panel.js` (the CSP nonce on the entry `<script type="module">` propagates to the whole module graph — no `buildHtml` changes needed when adding a module):
    - `panel.js` — entry point; wires toolbar/keyboard/message events and the render loop only.
    - `vscodeApi.js` — `acquireVsCodeApi()` singleton (may only be called once).
@@ -57,6 +61,7 @@ Extension host (Node, TypeScript)  ──  TCP 14239 (length-prefixed text)  ─
    - `messaging.js` — `readState()` / `sendState()` / rAF-debounced `scheduleSend()`.
    - `simulation.js` — fixed-timestep integration (60 Hz accumulator) + recording/playback.
    - `presets.js` — preset save/load/delete UI intents.
+   - `mcScreen.js` — macOS-only microcontroller monitor rendering; draws `SimStubServer`'s forwarded screen config/draw commands to `<canvas>` and relays touch input back.
    Coordinate convention is **Stormworks left-handed (X+ East, Y+ Up, Z+ North)** — three.js itself is right-handed, so the camera is positioned to make `+Z` look like "into the screen / north" without any scene-level flipping. The modules are vanilla JS with JSDoc types, checked by `npm run check:media` (strict).
 
 2. **`src/`** — the extension host.
@@ -66,6 +71,8 @@ Extension host (Node, TypeScript)  ──  TCP 14239 (length-prefixed text)  ─
    - `debugConfigPatcher.ts` is the **critical glue**: see "LifeBoatAPI integration" below.
    - `libraryPathInjector.ts` writes the bundled `lua/` path into `lifeboatapi.stormworks.libs.libraryPaths` for editor autocompletion. Re-run on `onDidChangeWorkspaceFolders`. The **runtime** does not depend on this setting — only autocomplete does.
    - `pathUtils.ts` — shared `normalize()` for Windows-safe path comparison (used by both files above).
+   - `simStubServer.ts` (macOS only) — the port-14238 stand-in for `STORMWORKS_Simulator.exe`; started from `debugConfigPatcher.ts` before `lua-debug` spawns Lua.
+   - `frame.ts` — the `%04d`-length-prefixed framing shared by `physServer.ts` and `simStubServer.ts`.
 
 3. **`lua/PhySim.lua`** — runs inside LifeBoatAPI's sandbox.
 
@@ -81,6 +88,12 @@ We solve both barriers in `debugConfigPatcher.ts`'s `resolveDebugConfigurationWi
 
 1. **Append the bundled `lua/` dir to `config.arg`.** LifeBoatAPI's `_simulator.lua` does `for i=3, #arg do rootDirs[...] = arg[i] end`, so anything we push gets indexed by `SimulatorSandbox`'s require map. This is why PhySim works in any LifeBoatAPI project without per-project setup — do NOT replace this with a settings-file approach.
 2. **Patch `_simulator.lua`** to insert `sandboxEnv._physim_socket = require("socket")` right after the `createSandbox(rootDirs)` line. The regex `SANDBOX_LINE_RE` matches that line; the `_physim_socket` marker prevents double-patching.
+
+On `process.platform === "darwin"`, two more patches apply:
+
+3. **Prepend `luasocket/darwin/?.so` to `config.cpath`.** LifeBoatAPI's own cpath entries are literal `.dll` file paths with no `?` template, and Lua's `package.searchpath` returns the first *readable* file regardless of module name — so our entry must be prepended, never appended, or it's never tried. See `doc/macos-support.md` for the discovery.
+4. **Override `config.luaArch`** to the native arch (`arm64` or `x86_64`) — LifeBoatAPI hardcodes `"x86"`, which would otherwise run Lua under Rosetta instead of natively.
+5. **Replace `FileSystemUtils.findPathsInDir`** (injected into `_simulator.lua` right *before* the `createSandbox` line, while the socket line goes after). LifeBoatAPI enumerates files with Windows `dir "..." /b`, which returns nothing on macOS — the sandbox's require map ends up empty and the user's script fails with "Could not find require". The shim uses POSIX `find -mindepth 1 -maxdepth 1 -type f|d` and returns bare names, matching the original contract. See `doc/macos-support.md` blocker 4.
 
 Constraints this puts on `lua/PhySim.lua`:
 

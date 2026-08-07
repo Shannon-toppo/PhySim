@@ -28,3 +28,30 @@ export function sendState() {
   refreshChannelTable(s);
   vscode.postMessage({ type: "state", ...s });
 }
+
+/**
+ * Monitor touch input (macOS monitor stand-in). The host relays this as a
+ * TOUCH frame to the Lua simulator; every field must be present because the
+ * Lua-side split() drops empty ones.
+ * @typedef {object} TouchState
+ * @property {number} screen
+ * @property {number} isTouched
+ * @property {number} isTouchedAlt
+ * @property {number} x
+ * @property {number} y
+ * @property {number} xAlt
+ * @property {number} yAlt
+ *
+ * @param {TouchState} t
+ */
+export function sendTouch(t) {
+  vscode.postMessage({ type: "touch", ...t });
+}
+
+/**
+ * Ask the host to repaint the monitors. Called once at load so a panel opened
+ * mid-session isn't blank until the next screen config.
+ */
+export function requestScreens() {
+  vscode.postMessage({ type: "screenRequest" });
+}

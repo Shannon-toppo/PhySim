@@ -32,6 +32,22 @@
 
   <div id="viewport"></div>
 
+  <div id="monitors" class="hidden">
+    <div class="monitors-head">
+      <span>Monitors</span>
+      <label class="monitor-zoom">
+        <span>Zoom</span>
+        <select id="monitor-zoom" title="Monitor scale. Fit = largest integer factor that fits the panel width.">
+          <option value="fit" selected>Fit</option>
+          <option value="2">2&#215;</option>
+          <option value="4">4&#215;</option>
+          <option value="8">8&#215;</option>
+        </select>
+      </label>
+    </div>
+    <div id="monitors-list"></div>
+  </div>
+
   <div id="sidebar">
     <h3>Position <small>(m)</small></h3>
     <div class="numrow"><label>X</label><input type="number" id="px-num" step="0.1" value="0" /><button class="rst" data-reset="px" title="Reset to 0" tabindex="-1">&#8634;</button></div>

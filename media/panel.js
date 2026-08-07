@@ -21,7 +21,8 @@ import {
 } from "./dom.js";
 import { scene, renderer, camera, orbit, transform, targetGroup, updateLabels } from "./scene.js";
 import { syncPoseFromInputs, syncInputsFromPose } from "./pose.js";
-import { scheduleSend, sendState } from "./messaging.js";
+import { scheduleSend, sendState, requestScreens } from "./messaging.js";
+import { applyScreenConfig, applyScreenFrame } from "./mcScreen.js";
 import { setSimulating, toggleSimulating, step } from "./simulation.js";
 import { renderPresetList, applyPresetState } from "./presets.js";
 
@@ -63,6 +64,9 @@ window.addEventListener("message", e => {
   else if (msg.type === "setMode") setMode(msg.mode);
   else if (msg.type === "presetList") renderPresetList(Array.isArray(msg.names) ? msg.names : []);
   else if (msg.type === "presetLoaded") applyPresetState(msg.state);
+  // macOS monitor stand-in — never sent on Windows.
+  else if (msg.type === "screenConfig") applyScreenConfig(Array.isArray(msg.screens) ? msg.screens : []);
+  else if (msg.type === "screenFrame") applyScreenFrame(Array.isArray(msg.commands) ? msg.commands : []);
 });
 
 // --- Input events --------------------------------------------------------------
@@ -111,3 +115,5 @@ loop();
 
 // initial send (sets table to all zeros and primes the TCP client if connected)
 sendState();
+// repaint monitors if the simulator was already running when this panel opened
+requestScreens();

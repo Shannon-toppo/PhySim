@@ -46,6 +46,15 @@ The values are streamed over a local TCP socket to a small Lua helper
    end
    ```
 
+## Platform support
+
+- **Windows** — uses LifeBoatAPI's own simulator UI (`STORMWORKS_Simulator.exe`) unmodified.
+- **macOS** — PhySim bundles universal (arm64 + x86_64) luasocket binaries built
+  for Lua 5.3, since LifeBoatAPI only ships Windows `.dll`s. It also stands in
+  for the Windows-only `STORMWORKS_Simulator.exe` on port 14238, rendering the
+  microcontroller's monitors inside the PhySim panel with touch input.
+  Verified against LifeBoatAPI 0.0.33.
+
 ## Coordinate system
 
 Stormworks uses a **left-handed** world coordinate system:

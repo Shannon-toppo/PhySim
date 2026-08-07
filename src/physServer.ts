@@ -1,4 +1,5 @@
 import * as net from "net";
+import { frame } from "./frame";
 
 export interface PhysState {
   position: [number, number, number];
@@ -27,11 +28,7 @@ export function encode(state: PhysState): Buffer {
     fmt(state.velocity[0]), fmt(state.velocity[1]), fmt(state.velocity[2]),
     fmt(state.angularVelocity[0]), fmt(state.angularVelocity[1]), fmt(state.angularVelocity[2])
   ].join("|");
-  const len = Buffer.byteLength(v, "utf8");
-  if (len > 9999) {
-    throw new Error("PhysServer: message too long for 4-digit length prefix");
-  }
-  return Buffer.from(len.toString().padStart(4, "0") + v, "utf8");
+  return frame(v);
 }
 
 export class PhysServer {

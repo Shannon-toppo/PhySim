@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import { PhysServer, PhysState, ZERO_STATE } from "./physServer";
+import { SimStubServer } from "./simStubServer";
 
 type Triple = [number, number, number];
 
@@ -15,7 +16,22 @@ interface PresetSaveMsg { type: "presetSave"; name: string; state: PhysState; }
 interface PresetLoadMsg { type: "presetLoad"; name: string; }
 interface PresetDeleteMsg { type: "presetDelete"; name: string; }
 interface PresetListRequestMsg { type: "presetListRequest"; }
-type FromWebview = StateMsg | PresetSaveMsg | PresetLoadMsg | PresetDeleteMsg | PresetListRequestMsg;
+/** macOS monitor stand-in: pointer input on a rendered screen (see simStubServer). */
+interface TouchMsg {
+  type: "touch";
+  screen: number;
+  isTouched: number;
+  isTouchedAlt: number;
+  x: number;
+  y: number;
+  xAlt: number;
+  yAlt: number;
+}
+/** Webview asking for a repaint of the monitors it may have missed. */
+interface ScreenRequestMsg { type: "screenRequest"; }
+type FromWebview =
+  StateMsg | PresetSaveMsg | PresetLoadMsg | PresetDeleteMsg | PresetListRequestMsg
+  | TouchMsg | ScreenRequestMsg;
 
 type PresetMap = { [name: string]: PhysState };
 const PRESETS_KEY = "physim.presets";
@@ -49,7 +65,33 @@ export class PhysSimPanelManager {
   private panelLocation: OpenLocation | null = null;
   private disposables: vscode.Disposable[] = [];
 
-  constructor(private ctx: vscode.ExtensionContext, private server: PhysServer) {}
+  constructor(
+    private ctx: vscode.ExtensionContext,
+    private server: PhysServer,
+    private stub: SimStubServer | null = null
+  ) {
+    // The stub outlives any individual panel, so subscribe once here and post
+    // into whichever panel happens to be open. State needed to repaint a panel
+    // opened later lives in the stub itself (getScreens / getLastFrame).
+    if (this.stub) {
+      this.stub.onScreenConfig = screens => {
+        if (this.panel) this.panel.webview.postMessage({ type: "screenConfig", screens });
+      };
+      this.stub.onFrame = commands => {
+        if (this.panel) this.panel.webview.postMessage({ type: "screenFrame", commands });
+      };
+    }
+  }
+
+  /** Repaint monitors in a freshly opened panel from the stub's current state. */
+  private replayScreens(panel: vscode.WebviewPanel): void {
+    if (!this.stub) return;
+    const screens = this.stub.getScreens();
+    if (screens.length === 0) return;
+    panel.webview.postMessage({ type: "screenConfig", screens });
+    const last = this.stub.getLastFrame();
+    if (last) panel.webview.postMessage({ type: "screenFrame", commands: last });
+  }
 
   async openOrReveal(): Promise<void> {
     const { openLocation } = readPanelSettings();
@@ -122,6 +164,26 @@ export class PhysSimPanelManager {
         }
         if (msg.type === "presetListRequest") {
           this.postPresetList(created);
+          return;
+        }
+        if (msg.type === "screenRequest") {
+          // Posted once by the webview at load: a panel opened mid-session
+          // would otherwise sit blank until the next SCREENCONFIG.
+          this.replayScreens(created);
+          return;
+        }
+        if (msg.type === "touch") {
+          // Sent by mcScreen.js. Fired only on darwin, where the stub exists.
+          if (!this.stub) return;
+          this.stub.sendTouch(
+            Number(msg.screen) || 0,
+            Number(msg.isTouched) === 1,
+            Number(msg.isTouchedAlt) === 1,
+            Number(msg.x) || 0,
+            Number(msg.y) || 0,
+            Number(msg.xAlt) || 0,
+            Number(msg.yAlt) || 0
+          );
           return;
         }
         if (msg.type === "presetSave") {

@@ -12,6 +12,10 @@ LifeBoatAPI シミュレーター自体が macOS では起動できない。PhyS
 
 ブロッカーは 2 つあり、**片方だけ直しても動くようにはならない**。
 
+> **追記 (2026-08-07, 対策実装時):** 実際に対策 B/C を実装して E2E 検証したところ、
+> 初回調査で見落としていた**ブロッカー 4**(`FileSystemUtils` の `dir /b` 依存)が見つかった。
+> 詳細は後述。ブロッカー 1〜4 すべての対処が v0.4.0 で PhySim に実装済み。
+
 ---
 
 ## ブロッカー 1: 同梱 luasocket が Windows DLL のみ（即座に失敗）
@@ -135,6 +139,31 @@ elseif OS == "macos" then
 Rosetta 経由の **x86_64 プロセス**になる。ブロッカー 1 を塞ぐために自前で luasocket を
 ビルドする場合、`.so` は **arm64 ではなく x86_64** で作る必要がある。あるいは PhySim 側で
 `config.luaArch = "arm64"` に上書きしてネイティブ実行にしてから arm64 の `.so` を用意する。
+
+---
+
+## ブロッカー 4: サンドボックスの require マップ構築が Windows の `dir /b` 依存（実装時に発見）
+
+初回調査では見落としていたが、ブロッカー 1・2 を塞いだ後の E2E で発覚した。
+`FileSystemUtils.findPathsInDir`（`Tools/Utils/FileSystemUtils.lua:63`）がファイル列挙を
+Windows の `dir` コマンドで行っている:
+
+```lua
+local processCommand = 'dir "'..dirPath:win()..'" /b ' .. commandlinePattern .. ' 2>nul'
+local process = io.popen('"' .. processCommand .. '"')
+```
+
+`SimulatorSandbox.createSandbox` はこれで rootDirs を再帰スキャンして require マップを作るため、
+macOS では `sh: dir ...: No such file or directory` で全スキャンが空になり、
+`sandboxEnv.require("<ユーザースクリプト>")` が
+`SimulatorSandbox.lua:62: Could not find require: ...` で落ちる。
+つまり **socket が読めてもサンドボックスがユーザーコードを見つけられない**。
+
+対処は `debugConfigPatcher.ts` の `_simulator.lua` パッチに含めた: `createSandbox(rootDirs)` の
+**直前**（socket 注入は直後）に、`findPathsInDir` を POSIX の
+`find <dir> -mindepth 1 -maxdepth 1 -type f|d` で置き換える関数をホストレベルで注入する。
+`/a-d`（ファイル）→ `-type f`、`/ad`（ディレクトリ）→ `-type d` の対応で、
+戻り値は元実装と同じ「ベース名のみ」に揃えている。
 
 ---
 

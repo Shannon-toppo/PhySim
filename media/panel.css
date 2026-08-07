@@ -12,10 +12,11 @@ html, body {
 body {
   display: grid;
   grid-template-columns: 1fr 240px;
-  grid-template-rows: 36px 1fr;
+  grid-template-rows: 36px 1fr auto;
   grid-template-areas:
     "toolbar toolbar"
-    "viewport sidebar";
+    "viewport sidebar"
+    "monitors sidebar";
   height: 100vh;
   width: 100vw;
 }
@@ -82,6 +83,100 @@ body {
   display: block;
   width: 100% !important;
   height: 100% !important;
+}
+
+/* Monitor stand-in for LifeBoatAPI's Windows-only simulator exe (macOS).
+   The row collapses to nothing while hidden, so Windows layout is unchanged. */
+#monitors {
+  grid-area: monitors;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 6px 8px;
+  border-top: 1px solid var(--vscode-panel-border, #444);
+  background: var(--vscode-editor-background);
+  /* Enlarged canvases scroll inside the section instead of pushing the
+     viewport row (grid-template-rows: 36px 1fr auto) off the page. */
+  max-height: 50vh;
+  overflow: hidden;
+}
+
+#monitors.hidden { display: none; }
+
+.monitors-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.75;
+  margin-bottom: 4px;
+  flex: none;
+}
+
+.monitor-zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.monitor-zoom select {
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 1px 4px;
+  font-size: 11px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.monitor-zoom select:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+#monitors-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Reserve the scrollbar gutter unconditionally: in "fit" mode a scrollbar
+     appearing would shrink clientWidth, which would pick a smaller scale,
+     which could remove the scrollbar again — a ResizeObserver oscillation. */
+  scrollbar-gutter: stable;
+}
+
+/* A fixed zoom may make a canvas wider than the column — scroll it rather
+   than shrinking it (which would break the integer pixel grid). */
+.monitor {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.monitor-label {
+  font-size: 10px;
+  opacity: 0.6;
+  font-family: var(--vscode-editor-font-family, monospace);
+  margin-bottom: 2px;
+}
+
+.monitor-canvas {
+  display: block;
+  background: #000;
+  image-rendering: pixelated;
+  border: 1px solid var(--vscode-panel-border, #444);
+  cursor: crosshair;
+  touch-action: none;
 }
 
 #sidebar {

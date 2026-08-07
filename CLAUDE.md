@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A VSCode extension that simulates Stormworks' in-game *physics sensor* block from a 3D gizmo, and feeds the values into `Stormworks Lua with LifeBoatAPI` (`NameousChangey.lifeboatapi`) microcontroller debug sessions. It runs alongside LifeBoatAPI's existing simulator (which already binds `127.0.0.1:14238`), so PhySim uses port **14239**.
 
-See `worklog.md` for the iteration history — the sandbox-limitation discoveries there are still load-bearing context for any Lua-side change.
+See `doc/worklog.md` for the iteration history — the sandbox-limitation discoveries there are still load-bearing context for any Lua-side change. `doc/macos-support.md` records why the extension cannot run on macOS (upstream LifeBoatAPI is Windows-only) — read it before attempting any cross-platform work.
 
 ## Commands
 
@@ -110,7 +110,7 @@ Touch all of these in lockstep, or things will silently desync:
 3. `lua/PhySim.lua` — message parsing in `update()`, channel writes in `injectAsInputs()`
 4. `test/` — `protocol.test.mjs` (field order), `channels.test.mjs` (golden vectors), `parity.test.mjs` (JS⇄Lua vectors)
 
-`README.md` / `README_jp.md` also need updating for any new CH.
+`README.md` / `doc/README_jp.md` also need updating for any new CH.
 
 ## Distribution
 

@@ -1,6 +1,6 @@
 # Stormworks Physics Sensor Sim (PhySim)
 
-### [日本語版](https://github.com/Shannon-toppo/PhySim/blob/main/README_jp.md)
+### [日本語版](https://github.com/Shannon-toppo/PhySim/blob/main/doc/README_jp.md)
 
 A VSCode extension that runs alongside **Stormworks Lua with LifeBoatAPI** and
 lets you drive a virtual `physics sensor` from a 3D gizmo window — so you can

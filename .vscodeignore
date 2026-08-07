@@ -2,7 +2,7 @@
 .vscode-test/**
 .claude/**
 CLAUDE.md
-worklog.md
+doc/**
 src/**
 scripts/**
 test/**

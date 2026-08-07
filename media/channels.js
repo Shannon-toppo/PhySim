@@ -21,6 +21,23 @@ export const TICKS_PER_SEC = 60;
 export const TWO_PI = Math.PI * 2;
 
 /**
+ * Wrap an angle into [-π, π) so CH4–6 stay bounded no matter how far the
+ * simulation (or a typed pose value) has spun past a full turn. Component-wise
+ * wrapping is exact for Euler angles — each axis' rotation matrix is 2π-periodic.
+ *
+ * The Lua twin is the `_normAngle` local in lua/PhySim.lua; Lua's `%` is already
+ * floor-modulo, JS' is a remainder, hence the sign fix-up here.
+ *
+ * @param {number} a angle in radians
+ * @returns {number} the same angle in [-π, π)
+ */
+export function normalizeAngle(a) {
+  if (!Number.isFinite(a)) return a;
+  const w = (a + Math.PI) % TWO_PI;
+  return (w < 0 ? w + TWO_PI : w) - Math.PI;
+}
+
+/**
  * Compute the derived channels CH13–17 from a raw state.
  *
  * @param {PhysStateLike} s

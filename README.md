@@ -69,7 +69,8 @@ The gizmo viewport renders Three.js' right-handed coordinates with the camera
 placed so that +Z visually extends **into the screen** (away from the viewer),
 matching the intuitive "north is forward" layout.
 
-Rotations are reported in radians using Three.js' Euler XYZ order.
+Rotations are reported in radians using Three.js' Euler XYZ order, normalized
+to **[-π, π)** — a full spin wraps instead of accumulating.
 
 ## Channel layout
 
@@ -81,9 +82,9 @@ starting at `startCh` (default `1`):
 | 1   | position X            | m (East)    |                                                |
 | 2   | position Y            | m (Up)      |                                                |
 | 3   | position Z            | m (North)   |                                                |
-| 4   | rotation X            | rad         | Euler XYZ (intrinsic)                          |
-| 5   | rotation Y            | rad         |                                                |
-| 6   | rotation Z            | rad         |                                                |
+| 4   | rotation X            | rad         | Euler XYZ (intrinsic), normalized to [-π, π)   |
+| 5   | rotation Y            | rad         | ″                                              |
+| 6   | rotation Z            | rad         | ″                                              |
 | 7   | linear vel. X         | m/tick      |                                                |
 | 8   | linear vel. Y         | m/tick      |                                                |
 | 9   | linear vel. Z         | m/tick      |                                                |

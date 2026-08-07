@@ -12,7 +12,7 @@
 // where it matters: playback stops simulation/recording, recording can't
 // start during playback.
 
-import { TICKS_PER_SEC } from "./channels.js";
+import { TICKS_PER_SEC, normalizeAngle } from "./channels.js";
 import { simBtn, recBtn, playBtn, recCountEl, readNum, writeNum } from "./dom.js";
 import { targetGroup } from "./scene.js";
 import { syncInputsFromPose } from "./pose.js";
@@ -60,9 +60,11 @@ function integrateOneTick() {
   targetGroup.position.x += vx;
   targetGroup.position.y += vy;
   targetGroup.position.z += vz;
-  targetGroup.rotation.x += ax;
-  targetGroup.rotation.y += ay;
-  targetGroup.rotation.z += az;
+  // wrapped so a long spin doesn't leave the pose inputs reading 40 rad while
+  // CH4-6 (normalized in readState) read something else
+  targetGroup.rotation.x = normalizeAngle(targetGroup.rotation.x + ax);
+  targetGroup.rotation.y = normalizeAngle(targetGroup.rotation.y + ay);
+  targetGroup.rotation.z = normalizeAngle(targetGroup.rotation.z + az);
 
   if (recording) recordBuffer.push(readState());
 }

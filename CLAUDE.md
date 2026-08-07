@@ -109,6 +109,8 @@ Constraints this puts on `lua/PhySim.lua`:
 
 The Stormworks tick rate (60 Hz) is baked into the m/tick → m/s and rad/tick → RPS conversions for CH13 and CH14.
 
+CH4–6 are normalized to **[-π, π)**. That math is also doubled: `normalizeAngle()` in `media/channels.js` (applied in `readState()` and in the integrator so the pose inputs stay wrapped too) and `_normAngle` in `lua/PhySim.lua` (applied when `update()` parses a frame, so `phys:rotation()` and CH4–6 always agree). Lua's `%` is floor-modulo and JS' is a remainder — the JS side needs the sign fix-up, the Lua side doesn't. Wrapping is idempotent, so applying it on both sides is harmless. `test/roundtrip.test.mjs` pins the Lua half against the JS twin.
+
 ## Coordinate / sign conventions
 
 - Stormworks world: **left-handed**, X+ East / Y+ Up / Z+ North. Stored in `memory/MEMORY.md` because it's easy to get wrong.

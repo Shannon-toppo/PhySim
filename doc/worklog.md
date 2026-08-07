@@ -77,7 +77,11 @@ Lua 側 `injectAsInputs` と JS 側 `refreshChannelTable` の両方に同じ式�
 ```
 PhySim/
 ├── package.json / tsconfig.json / tsconfig.media.json / eslint.config.mjs / .vscodeignore
-├── README.md / README_jp.md / worklog.md
+├── README.md / CLAUDE.md / LICENSE
+├── doc/
+│   ├── README_jp.md              # 日本語版 README
+│   ├── worklog.md                # このファイル（反復履歴）
+│   └── macos-support.md          # macOS 非対応の原因調査
 ├── src/
 │   ├── extension.ts              # activate / debug 監視
 │   ├── physServer.ts             # TCP サーバ (14239)、encode/fmt は export（テスト用）

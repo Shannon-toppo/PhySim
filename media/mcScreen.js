@@ -95,6 +95,12 @@ const CANVAS_CHROME = 2;
 
 /** Current selection: "fit", or a fixed integer factor as a string. */
 let zoomMode = "fit";
+/**
+ * Continuous value the pinch gesture accumulates into; the applied factor is
+ * its round(). Keeping the fraction means a slow pinch still advances instead
+ * of being rounded away on every event. Only read while zoomMode is fixed.
+ */
+let zoomFloat = 4;
 
 /**
  * @param {number} w logical (Stormworks) pixel width
@@ -126,8 +132,170 @@ function relayout() {
 
 monitorZoomEl.addEventListener("change", () => {
   zoomMode = monitorZoomEl.value;
+  const fixed = parseFloat(zoomMode);
+  if (Number.isFinite(fixed)) zoomFloat = fixed;
+  dropCustomOption();
   relayout();
 });
+
+// --- Pinch zoom ------------------------------------------------------------
+//
+// A macOS trackpad pinch reaches Chromium (which is what a VSCode webview
+// runs on) as a wheel event with ctrlKey set — there is no separate pinch
+// event, and Safari's gesture* events don't exist here. Ctrl/Cmd + a real
+// mouse wheel produces the same shape and means the same thing, so both are
+// handled together. preventDefault is required: otherwise the webview
+// browser-zooms the whole panel instead.
+
+/** deltaY per e-fold of scale. Chosen so a full trackpad pinch spans 1x-16x. */
+const ZOOM_SENSITIVITY = 0.01;
+/** A mouse notch is ~100px of deltaY; cap it so one notch isn't a 3x jump. */
+const MAX_STEP = 40;
+
+/**
+ * Wheel deltas come in pixels, lines or pages depending on the device.
+ * @param {WheelEvent} e
+ * @returns {number} deltaY in pixels
+ */
+function wheelPixels(e) {
+  if (e.deltaMode === 1) return e.deltaY * 16;    // lines
+  if (e.deltaMode === 2) return e.deltaY * 100;   // pages
+  return e.deltaY;
+}
+
+/**
+ * Where a gesture starts from: the live fixed factor, or — in "fit" mode —
+ * whatever fit is currently showing, so the first pinch doesn't jump.
+ * @returns {number}
+ */
+function currentZoomFloat() {
+  if (zoomMode !== "fit") return zoomFloat;
+  const first = monitors.values().next().value;
+  return first ? scaleFor(first.canvas.width) : zoomFloat;
+}
+
+monitorsSection.addEventListener("wheel", e => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  const step = Math.max(-MAX_STEP, Math.min(MAX_STEP, wheelPixels(e)));
+  // Pinch out (negative deltaY) magnifies; exponential so each pinch of the
+  // same size changes the scale by the same ratio.
+  const next = currentZoomFloat() * Math.exp(-step * ZOOM_SENSITIVITY);
+  zoomFloat = Math.max(MIN_SCALE, Math.min(MAX_SCALE, next));
+  zoomMode = String(Math.round(zoomFloat));
+  showZoomOption(zoomMode);
+
+  const anchor = anchorUnder(e);
+  relayout();
+  if (anchor) keepAnchored(anchor);
+}, { passive: false });
+
+// --- Cursor anchoring ------------------------------------------------------
+//
+// Growing a canvas moves the pixel under the cursor away from it, so the
+// gesture feels like it zooms the top-left corner. Instead: remember which
+// logical (Stormworks) pixel the cursor is over, then after the relayout
+// scroll it back under the cursor. The anchor is recomputed from the real
+// post-layout rect rather than scaled by the zoom ratio — the labels, gaps
+// and flex wrapping around the canvas don't scale with it.
+
+/**
+ * @typedef {object} ZoomAnchor
+ * @property {HTMLCanvasElement} canvas
+ * @property {number} lx logical pixel X under the cursor
+ * @property {number} ly logical pixel Y under the cursor
+ * @property {number} clientX where to put it back
+ * @property {number} clientY
+ */
+
+/**
+ * @param {WheelEvent} e
+ * @returns {ZoomAnchor | null} null when the cursor isn't over a monitor
+ */
+function anchorUnder(e) {
+  const canvas = e.target instanceof HTMLCanvasElement ? e.target : null;
+  if (!canvas || !canvas.classList.contains("monitor-canvas")) return null;
+  const r = canvas.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return null;
+  return {
+    canvas,
+    lx: (e.clientX - r.left) * (canvas.width / r.width),
+    ly: (e.clientY - r.top) * (canvas.height / r.height),
+    clientX: e.clientX,
+    clientY: e.clientY
+  };
+}
+
+/** @param {ZoomAnchor} a */
+function keepAnchored(a) {
+  const r = a.canvas.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return;
+  const sx = r.width / a.canvas.width, sy = r.height / a.canvas.height;
+  // Whole pixels: a fractional scroll offset would blur the pixelated canvas.
+  const dx = Math.round(r.left + a.lx * sx - a.clientX);
+  const dy = Math.round(r.top + a.ly * sy - a.clientY);
+  nudgeScroll(a.canvas.parentElement, dx, dy);
+}
+
+/**
+ * Push the delta through the scrollable ancestors, innermost first: the
+ * .monitor wrapper scrolls horizontally, #monitors-list vertically, and each
+ * consumes only what it can (non-scrollable ones consume nothing and pass it
+ * on).
+ * @param {HTMLElement | null} from
+ * @param {number} dx @param {number} dy
+ */
+function nudgeScroll(from, dx, dy) {
+  for (let node = from; node && (dx || dy); node = node.parentElement) {
+    if (dx) {
+      const before = node.scrollLeft;
+      node.scrollLeft = before + dx;
+      dx -= node.scrollLeft - before;
+    }
+    if (dy) {
+      const before = node.scrollTop;
+      node.scrollTop = before + dy;
+      dy -= node.scrollTop - before;
+    }
+    if (node === monitorsSection) return;
+  }
+}
+
+/**
+ * The <select> only lists a few preset factors, but a pinch can land on any
+ * integer — park those on one reusable option kept in numeric order.
+ * @type {HTMLOptionElement | null}
+ */
+let customOption = null;
+
+function dropCustomOption() {
+  if (!customOption) return;
+  customOption.remove();
+  customOption = null;
+}
+
+/** @param {string} value integer factor as a string */
+function showZoomOption(value) {
+  const preset = Array.from(monitorZoomEl.options)
+    .some(o => o.value === value && o !== customOption);
+  if (preset) {
+    dropCustomOption();
+    monitorZoomEl.value = value;
+    return;
+  }
+  if (!customOption) {
+    customOption = document.createElement("option");
+    monitorZoomEl.appendChild(customOption);
+  }
+  customOption.value = value;
+  customOption.textContent = `${value}×`;
+
+  const v = parseInt(value, 10);
+  const after = Array.from(monitorZoomEl.options)
+    .find(o => o !== customOption && parseInt(o.value, 10) > v);
+  monitorZoomEl.insertBefore(customOption, after ?? null);
+  monitorZoomEl.value = value;
+}
 
 // Fit mode depends on the column width, which changes with the panel/sidebar.
 let lastWidth = -1;

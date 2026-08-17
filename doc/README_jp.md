@@ -54,7 +54,9 @@ PIDコントローラー・INS・オートパイロットなどのロジック�
 - **macOS** — LifeBoatAPIがWindows用の `.dll` しか同梱していないため、PhySimがLua 5.3向けの
   universalバイナリ（arm64 + x86_64）のluasocketを同梱して補います。また、Windows専用の
   `STORMWORKS_Simulator.exe` の代役として14238番ポートでも待ち受け、マイコンのモニター画面を
-  PhySimパネル内にタッチ入力付きで描画します。LifeBoatAPI 0.0.33で動作確認済みです。
+  PhySimパネル内にタッチ入力付きで描画します。モニターの表示倍率はZoomのドロップダウンのほか、
+  トラックパッドのピンチ（Ctrl/Cmd + ホイールも同じ）でも変えられます。
+  LifeBoatAPI 0.0.33で動作確認済みです。
 
 ## 座標系
 

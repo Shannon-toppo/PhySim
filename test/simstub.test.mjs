@@ -141,6 +141,25 @@ test("Lua-style float params and unknown commands", async () => {
   });
 });
 
+test("TRIANGLE keeps all six coordinates", async () => {
+  await withClient(async (server, sock) => {
+    const frames = [];
+    server.onFrame = c => frames.push(c);
+    // LifeBoatAPI sends screen, fill, x1, y1, x2, y2, x3, y3 — eight params.
+    // An arity that is one short doesn't drop the command, it folds "30|42"
+    // into one field and loses y3, which stretched every filled triangle up
+    // to y=0.
+    sock.write(frame("TRIANGLE|1|1|10|12|20|22|30|42"));
+    sock.write(frame("TRIANGLE|1|0|1|2|3|4|5|6"));
+    sock.write(frame("TICKEND|1"));
+    await settle();
+    assert.deepEqual(frames[0], [
+      ["TRIANGLE", 1, 1, 10, 12, 20, 22, 30, 42],
+      ["TRIANGLE", 1, 0, 1, 2, 3, 4, 5, 6]
+    ]);
+  });
+});
+
 test("sendTouch emits all seven params, never an empty one", async () => {
   await withClient(async (server, sock, received) => {
     server.sendTouch(1, true, false, 12.4, 30.6, 0, 0);

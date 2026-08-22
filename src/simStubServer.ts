@@ -58,7 +58,11 @@ const ARG_COUNTS: Record<string, number> = {
   LINE: 5,
   CIRCLE: 5,
   RECT: 6,
-  TRIANGLE: 7,
+  // screen, fill, x1, y1, x2, y2, x3, y3 — eight, not seven. Getting this
+  // short doesn't drop the command, it silently swallows the tail into the
+  // last field (parseFloat("30|30") === 30), so y3 read back as 0 and every
+  // filled triangle was stretched to the top of the screen.
+  TRIANGLE: 8,
   TEXT: 3,
   TEXTBOX: 7,
   MAP: 4,

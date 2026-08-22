@@ -1,9 +1,11 @@
-// Microcontroller monitor rendering (macOS only).
+// Microcontroller monitor rendering.
 //
-// On Windows the LifeBoatAPI simulator draws the MC's screens in its own
+// Normally the LifeBoatAPI simulator draws the MC's screens in its own
 // STORMWORKS_Simulator.exe window. That exe is Windows-only, so on macOS the
-// extension host stands in for it (src/simStubServer.ts) and forwards two
-// messages here:
+// extension host always stands in for it (src/simStubServer.ts) — and on
+// Windows it can be asked to, via the experimental
+// `physim.monitors.useBuiltInOnWindows` setting. Either way the host forwards
+// two messages here:
 //
 //   {type:"screenConfig", screens:[{number,width,height,poweredOn,portrait}]}
 //   {type:"screenFrame",  commands:[["RECT",1,1,0,0,32,32], ...]}

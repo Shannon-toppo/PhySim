@@ -16,11 +16,16 @@ function readPort(): number {
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const server = new PhysServer();
-  // macOS only: LifeBoatAPI ships a Windows-only STORMWORKS_Simulator.exe, so
-  // on darwin PhySim stands in for it on port 14238 and renders the
-  // microcontroller's monitors inside the panel. On Windows the real exe owns
-  // that port and nothing here changes.
-  const stub = process.platform === "darwin" ? new SimStubServer() : null;
+  // Stand-in for LifeBoatAPI's Windows-only STORMWORKS_Simulator.exe: PhySim
+  // answers on port 14238 and renders the microcontroller's monitors inside
+  // the panel. Constructed on both platforms but only *started* when it is
+  // actually in use — mandatory on macOS (the exe can't run), opt-in and
+  // experimental on Windows. That decision is made per debug session in
+  // debugConfigPatcher's useBuiltInMonitors(), so the setting takes effect
+  // without a window reload; constructing the server binds nothing.
+  const stub = process.platform === "darwin" || process.platform === "win32"
+    ? new SimStubServer()
+    : null;
   const panel = new PhysSimPanelManager(ctx, server, stub);
 
   await ensureInjected(ctx);

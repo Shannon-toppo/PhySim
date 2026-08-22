@@ -51,6 +51,8 @@ PIDコントローラー・INS・オートパイロットなどのロジック�
 ## 対応プラットフォーム
 
 - **Windows** — LifeBoatAPI 自体のシミュレーターUI（`STORMWORKS_Simulator.exe`）をそのまま使用します。
+  PhySim 側のモニター表示に切り替えることもできます（後述の
+  [Windowsで自前のモニター表示を使う](#windowsで自前のモニター表示を使う実験的機能)）。
 - **macOS** — LifeBoatAPI が Windows 専用のため、モニターシミュレーション（**ベータ版**）を
   含めて PhySim 側で自前に用意しています。詳細は下記。
 
@@ -89,6 +91,19 @@ LifeBoatAPI（`NameousChangey.lifeboatapi` 0.0.33）は Windows 用バイナリ�
 
 LifeBoatAPI 0.0.33 で動作確認済みです。調査の詳細は
 [`doc/macos-support.md`](macos-support.md) を参照してください。
+
+### Windowsで自前のモニター表示を使う（実験的機能）
+
+`physim.monitors.useBuiltInOnWindows` を `true` にすると、Windows でも
+`STORMWORKS_Simulator.exe` を起動せず、マイコンのモニターを PhySim パネル内に
+描画します。この場合 PhySim は LifeBoatAPI 自身の `attachToExistingProcess` の経路を
+使って exe の起動を抑止し、代わりに14238番ポートに応答するので、ポートの奪い合いは
+起きません。設定は次の **F6** から反映され、ウィンドウの再読み込みは不要です。
+
+デフォルトはOFFで、パネル内で見たい理由が特に無ければOFFのままを推奨します。Windows では
+実物の exe の方が忠実で、切り替えると上記の再実装由来の制約（ビットマップフォントの文字、
+地形データの無い `screen.drawMap`、プライマリのみのタッチ）に加えて、PhySim が再現していない
+exe の入出力パネルも失われるためです。チャンネルは PhySim パネルから操作してください。
 
 ## 座標系
 
@@ -189,6 +204,7 @@ Stormworksは**左手系**ワールド座標系を使用しています:
 | `physim.autoOpenOnSimulate`          | true       | LifeBoatAPIの「Run Simulator」起動時にパネルを自動で開く               |
 | `physim.panel.openLocation`          | beside     | パネルを開く位置。`beside` = アクティブエディタの隣に分離、`newWindow` = 別ウィンドウで開く（VSCode 1.85以降が必要） |
 | `physim.autoInjectLibraryPath`       | true       | `<extension>/lua/` を `lifeboatapi.stormworks.libs.libraryPaths` に追加 |
+| `physim.monitors.useBuiltInOnWindows` | false     | **実験的機能・Windows専用。** `STORMWORKS_Simulator.exe` を起動せず、モニターを PhySim パネルに描画する。macOSでは自前実装しか選択肢が無いため無視されます |
 
 ## 開発とテスト
 

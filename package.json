@@ -63,6 +63,11 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically add the bundled lua/ folder to lifeboatapi.stormworks.libs.libraryPaths for LifeBoatAPI workspaces."
+        },
+        "physim.monitors.useBuiltInOnWindows": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**Experimental (Windows only).** Render the microcontroller's monitors inside the PhySim panel instead of launching LifeBoatAPI's `STORMWORKS_Simulator.exe`.\n\nPhySim's monitor rendering is a reimplementation, not the game's: text uses a bitmap font, `screen.drawMap` has no terrain data behind it, touch is primary-touch only, and the exe's input/output panels are not reproduced — drive the channels from the PhySim panel instead. Takes effect on the next **F6**.\n\nOn macOS the built-in monitors are always used and this setting is ignored."
         }
       }
     }

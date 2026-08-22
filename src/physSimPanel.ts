@@ -173,7 +173,8 @@ export class PhysSimPanelManager {
           return;
         }
         if (msg.type === "touch") {
-          // Sent by mcScreen.js. Fired only on darwin, where the stub exists.
+          // Sent by mcScreen.js. Only ever fires while the stub is running:
+          // always on macOS, opt-in on Windows.
           if (!this.stub) return;
           this.stub.sendTouch(
             Number(msg.screen) || 0,

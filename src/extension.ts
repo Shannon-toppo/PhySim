@@ -4,6 +4,7 @@ import { PhysSimPanelManager } from "./physSimPanel";
 import { ensureInjected } from "./libraryPathInjector";
 import { PhysimDebugPatcher } from "./debugConfigPatcher";
 import { SimStubServer } from "./simStubServer";
+import { log, showLog, disposeLog } from "./log";
 
 function isLifeBoatSimulator(session: vscode.DebugSession): boolean {
   return session.type === "lua" && session.name === "Run Simulator";
@@ -27,6 +28,8 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     ? new SimStubServer()
     : null;
   const panel = new PhysSimPanelManager(ctx, server, stub);
+
+  log(`PhySim ${ctx.extension.packageJSON.version ?? "?"} activated on ${process.platform}.`);
 
   await ensureInjected(ctx);
 
@@ -54,9 +57,10 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       await server.stop();
       if (stub) await stub.stop();
     }),
+    vscode.commands.registerCommand("physim.showLog", () => showLog()),
     vscode.commands.registerCommand("physim.open",  () => panel.openOrReveal()),
     vscode.commands.registerCommand("physim.reset", () => panel.reset()),
-    { dispose: () => { server.stop(); if (stub) stub.stop(); panel.close(); } }
+    { dispose: () => { server.stop(); if (stub) stub.stop(); panel.close(); disposeLog(); } }
   );
 }
 

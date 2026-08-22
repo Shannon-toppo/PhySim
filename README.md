@@ -104,6 +104,10 @@ monitors inside the PhySim panel on Windows too, instead of launching
 `attachToExistingProcess` path) and answers on port 14238 in its place, so the two
 never compete for it. The setting takes effect on the next **F6** — no reload needed.
 
+If it doesn't seem to do anything, run **PhySim: Show Log** from the command palette
+— the log says which renderer each F6 chose, whether port 14238 was actually claimed,
+and whether the `_simulator.lua` patches applied.
+
 Off by default, and worth keeping off unless you want the panel: on Windows the real
 exe is the faithful renderer, and switching means accepting the same
 reimplementation caveats listed above — bitmap-font text, no terrain behind

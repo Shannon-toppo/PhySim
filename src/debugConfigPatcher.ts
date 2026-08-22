@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { normalize } from "./pathUtils";
 import { SimStubServer, SIM_STUB_PORT } from "./simStubServer";
 import { patchSimulatorLua } from "./simulatorLuaPatch";
+import { log } from "./log";
 
 // LifeBoatAPI's SimulatorSandbox builds its own restricted `require` that only
 // resolves Lua files under the project's root directories (the args passed to
@@ -59,10 +60,19 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
     // as it starts, so the listener has to be up before lua-debug spawns Lua —
     // this hook is the last point where that is guaranteed.
     const builtInMonitors = useBuiltInMonitors();
+    log(
+      `Simulate (F6) on ${process.platform}: monitors drawn by ` +
+      (builtInMonitors ? "PhySim (built-in)" : "LifeBoatAPI's STORMWORKS_Simulator.exe") +
+      (process.platform === "win32"
+        ? ` — physim.monitors.useBuiltInOnWindows = ${builtInMonitors}`
+        : "")
+    );
     if (this.stub && builtInMonitors) {
       try {
         await this.stub.start();
+        log(`Listening on 127.0.0.1:${SIM_STUB_PORT} in place of the simulator exe.`);
       } catch (err) {
+        log(`FAILED to listen on ${SIM_STUB_PORT}: ${err instanceof Error ? err.message : String(err)}`);
         vscode.window.showErrorMessage(
           `PhySim: could not listen on port ${SIM_STUB_PORT} (${err instanceof Error ? err.message : String(err)}). ` +
           "Another process — possibly a previous simulator run — is using it, so the monitor view will stay blank."
@@ -72,6 +82,7 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
       // The setting was turned off between runs: release the port so
       // LifeBoatAPI's own exe can take it again.
       await this.stub.stop();
+      log(`Released port ${SIM_STUB_PORT} back to LifeBoatAPI's simulator exe.`);
     }
 
     // (0b) macOS only: point cpath at our bundled universal luasocket .so and
@@ -112,6 +123,12 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
         posixFileScan: process.platform === "darwin",
         builtInMonitors
       });
+      log(
+        `_simulator.lua: socket injection ${result.sandboxLineFound ? "ok" : "FAILED"}` +
+        (builtInMonitors
+          ? `, exe launch suppressed ${result.beginSimulationFound ? "ok" : "FAILED"}`
+          : "")
+      );
       if (!result.sandboxLineFound) {
         vscode.window.showWarningMessage(
           "PhySim: could not patch _simulator.lua (LifeBoatAPI sandbox line not found). " +

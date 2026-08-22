@@ -31,6 +31,10 @@
       {
         "command": "physim.reset",
         "title": "PhySim: Reset Gizmo"
+      },
+      {
+        "command": "physim.showLog",
+        "title": "PhySim: Show Log"
       }
     ],
     "configuration": {

@@ -49,12 +49,43 @@ The values are streamed over a local TCP socket to a small Lua helper
 ## Platform support
 
 - **Windows** — uses LifeBoatAPI's own simulator UI (`STORMWORKS_Simulator.exe`) unmodified.
-- **macOS** — PhySim bundles universal (arm64 + x86_64) luasocket binaries built
-  for Lua 5.3, since LifeBoatAPI only ships Windows `.dll`s. It also stands in
-  for the Windows-only `STORMWORKS_Simulator.exe` on port 14238, rendering the
-  microcontroller's monitors inside the PhySim panel with touch input. The
-  monitor scale follows the Zoom dropdown, a trackpad pinch, or Ctrl/Cmd +
-  wheel. Verified against LifeBoatAPI 0.0.33.
+- **macOS** — LifeBoatAPI is Windows-only, so PhySim supplies the missing pieces
+  itself, including its own monitor simulation (**beta**). See below.
+
+### macOS — PhySim provides its own monitor simulation
+
+> **This is a beta feature.** The monitor simulation is written and maintained
+> here rather than coming from upstream, so its rendering, protocol handling and
+> UI may still change in breaking ways between releases — including in ways that
+> require changes on your side.
+
+LifeBoatAPI (`NameousChangey.lifeboatapi` 0.0.33) ships Windows binaries only, and
+without help its debug session does not start on macOS at all. PhySim works around
+that:
+
+- **luasocket** — LifeBoatAPI only ships Windows `.dll`s, so PhySim bundles
+  universal (arm64 + x86_64) luasocket binaries built for Lua 5.3 and puts them on
+  the Lua `cpath`.
+- **The simulator window** — `STORMWORKS_Simulator.exe` is a Windows executable and
+  cannot run on macOS at all, so **PhySim implements the monitor simulation itself**.
+  It listens on port 14238 speaking the same protocol the exe does, renders the
+  microcontroller's draw calls onto `<canvas>` inside the PhySim panel, and sends
+  touch input back. The monitor scale follows the Zoom dropdown, a trackpad pinch,
+  or Ctrl/Cmd + wheel.
+
+Since that rendering is an independent reimplementation and not the game's own, it
+differs from the real simulator in a few ways:
+
+- text uses a hand-made 4x5 bitmap font, so glyphs are close to — but not identical
+  to — the in-game font
+- there is no terrain data behind `screen.drawMap`, which paints a flat ocean fill
+  as a placeholder
+- touch is primary-touch only (the "alt" touch values are always 0)
+- the exe's input/output panels are not reproduced — drive the channels from the
+  PhySim panel instead
+
+Verified against LifeBoatAPI 0.0.33. The full investigation is in
+[`doc/macos-support.md`](doc/macos-support.md).
 
 ## Coordinate system
 

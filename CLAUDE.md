@@ -143,7 +143,7 @@ Touch all of these in lockstep, or things will silently desync:
 3. `lua/PhySim.lua` — message parsing in `update()`, channel writes in `injectAsInputs()`
 4. `test/` — `protocol.test.mjs` (field order), `channels.test.mjs` (golden vectors), `parity.test.mjs` (JS⇄Lua vectors)
 
-`README.md` / `doc/README_jp.md` also need updating for any new CH.
+`README.md` (Japanese, the one GitHub shows) / `doc/README_en.md` also need updating for any new CH.
 
 ## Distribution
 

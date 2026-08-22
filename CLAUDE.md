@@ -32,6 +32,7 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `roundtrip.test.mjs` — Node `encode()` bytes fed through `PhySim.lua`'s real `update()` parser and read back (frame splits, concatenation, corrupt-prefix resync).
 - `parity.test.mjs` — **the CH13–17 desync guard**: runs `media/channels.js` and `PhySim.lua:injectAsInputs` over the same vectors and asserts agreement to 1e-9. Extend its vector table whenever the derived-channel math changes.
 - Lua runs inside **fengari** (Lua 5.3 semantics in pure JS — same major version as lua-debug) via `test/helpers/luaRunner.mjs`, which stubs `_physim_socket` and drives `PhySim._buf` directly. No system Lua install needed.
+- `raster.test.mjs` — `media/raster.js`: exact pixel sets for axis-aligned and 45° lines, circle symmetry, triangle coverage, and the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
 - `simstub.test.mjs` — the shared `frame.ts` framing (prefix encode/decode, split/concat/corrupt-prefix resync) plus `simStubServer.ts`'s protocol handling: `SCREENCONFIG` → `SCREENSIZE`, portrait swap, `TICKEND` buffering/flush, draw-command parsing, and `sendTouch()`'s wire shape.
 
 ## Architecture — three boundaries, three runtimes
@@ -61,7 +62,9 @@ On macOS, a second TCP server — `SimStubServer` on port 14238 (`src/simStubSer
    - `messaging.js` — `readState()` / `sendState()` / rAF-debounced `scheduleSend()`.
    - `simulation.js` — fixed-timestep integration (60 Hz accumulator) + recording/playback.
    - `presets.js` — preset save/load/delete UI intents.
-   - `mcScreen.js` — macOS-only microcontroller monitor rendering; draws `SimStubServer`'s forwarded screen config/draw commands to `<canvas>` and relays touch input back.
+   - `mcScreen.js` — macOS-only microcontroller monitor rendering; draws `SimStubServer`'s forwarded screen config/draw commands to `<canvas>` and relays touch input back. See "Monitor colours" below before touching `rgba()`.
+   - `pixelFont.js` — the hand-drawn 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush).
+   - `raster.js` — **integer-grid line/circle/triangle rasterisers, pure module** (no DOM/canvas — the target is a `plot`/`fillRun` callback) so `test/raster.test.mjs` can run them in Node. Canvas path drawing anti-aliases, which the integer CSS upscale magnifies into a visible haze; Stormworks monitors have no AA. Every rasteriser clips to the screen, so a microcontroller passing ±1e9 coordinates can't hang the panel.
    Coordinate convention is **Stormworks left-handed (X+ East, Y+ Up, Z+ North)** — three.js itself is right-handed, so the camera is positioned to make `+Z` look like "into the screen / north" without any scene-level flipping. The modules are vanilla JS with JSDoc types, checked by `npm run check:media` (strict).
 
 2. **`src/`** — the extension host.
@@ -110,6 +113,18 @@ Constraints this puts on `lua/PhySim.lua`:
 The Stormworks tick rate (60 Hz) is baked into the m/tick → m/s and rad/tick → RPS conversions for CH13 and CH14.
 
 CH4–6 are normalized to **[-π, π)**. That math is also doubled: `normalizeAngle()` in `media/channels.js` (applied in `readState()` and in the integrator so the pose inputs stay wrapped too) and `_normAngle` in `lua/PhySim.lua` (applied when `update()` parses a frame, so `phys:rotation()` and CH4–6 always agree). Lua's `%` is floor-modulo and JS' is a remainder — the JS side needs the sign fix-up, the Lua side doesn't. Wrapping is idempotent, so applying it on both sides is harmless. `test/roundtrip.test.mjs` pins the Lua half against the JS twin.
+
+## Monitor colours (macOS panel)
+
+LifeBoatAPI gamma-corrects every colour **in Lua** before it reaches us —
+`Simulator_ScreenAPI.lua`'s `_setColorBase` does `255 * ((c/255)/0.85)^(1/2.4)`
+— to replicate what the game does to monitors. It lifts dark tones hard: a
+`setColor` of 30 arrives as 112, and anything from 217 up clips to white. The
+washed-out result is *correct*; don't "fix" it by changing `rgba()`.
+
+The correction is applied unclamped (255 leaves as 272.9), so the panel's
+optional **True colour** toggle (`unGamma`, off by default) inverts it
+losslessly back to the original `setColor` values.
 
 ## Coordinate / sign conventions
 

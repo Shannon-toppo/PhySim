@@ -16,11 +16,16 @@
 // The exe clears the screen between rendered frames and the MC's onDraw
 // repaints from scratch every frame, so each screenFrame starts from black.
 
-import { monitorsSection, monitorsList, monitorZoomEl } from "./dom.js";
+import {
+  monitorsSection, monitorsList, monitorZoomEl, monitorTrueColourEl
+} from "./dom.js";
 import { sendTouch } from "./messaging.js";
 import {
   drawPixelText, measurePixelText, measurePixelBlockHeight, LINE_HEIGHT
 } from "./pixelFont.js";
+import {
+  strokeLine, strokeCircle, fillCircle, strokeTriangle, fillTriangle
+} from "./raster.js";
 
 /**
  * @typedef {object} ScreenInfo
@@ -70,12 +75,38 @@ function clamp255(v) {
   return v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
 }
 
+// LifeBoatAPI gamma-corrects every colour in Lua before it reaches us
+// (Simulator_ScreenAPI.lua: `255 * ((c/255) / 0.85) ^ (1/2.4)`) to replicate
+// what the game does to monitor colours. It lifts dark tones hard — a
+// setColor of 30 arrives as 112, and anything from 217 up clips to white — so
+// the panel looks washed out on purpose. "True colour" undoes exactly that and
+// shows the values the microcontroller actually passed to screen.setColor.
+// Off by default: the washed-out rendering is the faithful one.
+//
+// The correction is applied unclamped on the Lua side, so the inverse is
+// lossless: 255 leaves as 272.9 and comes back as 255.
+
+const GAMMA_A = 0.85;
+const GAMMA_Y = 2.4;
+
+/** Whether to undo LifeBoatAPI's gamma correction before drawing. */
+let trueColour = false;
+
 /**
- * Lua already gamma-corrects the channel values, so they map straight to CSS.
+ * @param {number} c gamma-corrected channel value as sent by LifeBoatAPI
+ * @returns {number} the raw screen.setColor value
+ */
+function unGamma(c) {
+  return c <= 0 ? 0 : 255 * GAMMA_A * Math.pow(c / 255, GAMMA_Y);
+}
+
+/**
+ * Alpha is not gamma-corrected on the Lua side, so it is passed through.
  * @param {number} r @param {number} g @param {number} b @param {number} a
  * @returns {string}
  */
 function rgba(r, g, b, a) {
+  if (trueColour) { r = unGamma(r); g = unGamma(g); b = unGamma(b); }
   return `rgba(${clamp255(r)},${clamp255(g)},${clamp255(b)},${clamp255(a) / 255})`;
 }
 
@@ -390,21 +421,38 @@ function createMonitor(num, w, h, info) {
 // --- Frame replay ----------------------------------------------------------
 
 /**
+ * The last frame's draw calls, kept so a rendering setting (true colour) can
+ * repaint what is already on screen instead of waiting for the next tick —
+ * which never comes if the simulated microcontroller is paused.
+ * @type {DrawCommand[]}
+ */
+let lastCommands = [];
+
+/**
  * Repaint every monitor from one frame's accumulated draw calls.
  * @param {DrawCommand[]} commands
  */
 export function applyScreenFrame(commands) {
+  lastCommands = Array.isArray(commands) ? commands : [];
+  repaint();
+}
+
+function repaint() {
   if (monitors.size === 0) return;
   for (const m of monitors.values()) {
     m.ctx.fillStyle = "#000";
     m.ctx.fillRect(0, 0, m.canvas.width, m.canvas.height);
   }
   colour = "rgba(255,255,255,1)";
-  if (!Array.isArray(commands)) return;
-  for (const c of commands) {
+  for (const c of lastCommands) {
     if (Array.isArray(c)) draw(c);
   }
 }
+
+monitorTrueColourEl.addEventListener("change", () => {
+  trueColour = monitorTrueColourEl.checked;
+  repaint();
+});
 
 /**
  * @param {number} index
@@ -446,40 +494,44 @@ function draw(c) {
       return;
     }
 
-    case "LINE": {
-      // +0.5 puts the 1px stroke on the pixel centre instead of straddling
-      // two pixels (which would render as a 2px blur).
-      ctx.beginPath();
-      ctx.moveTo(n(c[2]) + 0.5, n(c[3]) + 0.5);
-      ctx.lineTo(n(c[4]) + 0.5, n(c[5]) + 0.5);
-      ctx.stroke();
+    case "LINE":
+      strokeLine(plotter(ctx), n(c[2]), n(c[3]), n(c[4]), n(c[5]), canvas);
       return;
-    }
 
     case "CIRCLE": {
       const fill = n(c[2]) === 1;
-      ctx.beginPath();
-      ctx.arc(n(c[3]) + 0.5, n(c[4]) + 0.5, Math.max(0, n(c[5])), 0, Math.PI * 2);
-      if (fill) ctx.fill(); else ctx.stroke();
+      if (fill) fillCircle(runner(ctx), n(c[3]), n(c[4]), n(c[5]), canvas);
+      else strokeCircle(plotter(ctx), n(c[3]), n(c[4]), n(c[5]));
       return;
     }
 
     case "RECT": {
+      // Snapped to whole pixels: the microcontroller is free to pass fractional
+      // coordinates, and fillRect would anti-alias those into grey edges.
       const fill = n(c[2]) === 1;
-      const x = n(c[3]), y = n(c[4]), w = n(c[5]), h = n(c[6]);
-      if (fill) ctx.fillRect(x, y, w, h);
-      else ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      const x0 = Math.round(n(c[3])), y0 = Math.round(n(c[4]));
+      const x1 = Math.round(n(c[3]) + n(c[5])), y1 = Math.round(n(c[4]) + n(c[6]));
+      const w = x1 - x0, h = y1 - y0;
+      if (fill) {
+        ctx.fillRect(x0, y0, w, h);
+      } else if (w > 0 && h > 0) {
+        // Four 1px runs rather than strokeRect, so the corners aren't drawn
+        // twice (which would double-blend a translucent colour).
+        ctx.fillRect(x0, y0, w, 1);
+        if (h > 1) ctx.fillRect(x0, y1 - 1, w, 1);
+        if (h > 2) {
+          ctx.fillRect(x0, y0 + 1, 1, h - 2);
+          if (w > 1) ctx.fillRect(x1 - 1, y0 + 1, 1, h - 2);
+        }
+      }
       return;
     }
 
     case "TRIANGLE": {
       const fill = n(c[2]) === 1;
-      ctx.beginPath();
-      ctx.moveTo(n(c[3]) + 0.5, n(c[4]) + 0.5);
-      ctx.lineTo(n(c[5]) + 0.5, n(c[6]) + 0.5);
-      ctx.lineTo(n(c[7]) + 0.5, n(c[8]) + 0.5);
-      ctx.closePath();
-      if (fill) ctx.fill(); else ctx.stroke();
+      const v = [n(c[3]), n(c[4]), n(c[5]), n(c[6]), n(c[7]), n(c[8])];
+      if (fill) fillTriangle(runner(ctx), v[0], v[1], v[2], v[3], v[4], v[5], canvas);
+      else strokeTriangle(plotter(ctx), v[0], v[1], v[2], v[3], v[4], v[5], canvas);
       return;
     }
 
@@ -499,6 +551,43 @@ function draw(c) {
     default:
       return;
   }
+}
+
+/**
+ * A de-duplicating pixel plotter for raster.js. The rasterisers can revisit a
+ * pixel (the circle's eight-way symmetry meets on the axes, a triangle's edges
+ * meet at its corners) and painting one twice would double-blend a translucent
+ * colour into a brighter dot. One Set per shape; outlines are O(perimeter), so
+ * it stays small.
+ * @param {CanvasRenderingContext2D} ctx
+ * @returns {import("./raster.js").Plot}
+ */
+function plotter(ctx) {
+  const canvas = ctx.canvas;
+  const seen = new Set();
+  return (x, y) => {
+    if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return;
+    const key = y * canvas.width + x;
+    if (seen.has(key)) return;
+    seen.add(key);
+    ctx.fillRect(x, y, 1, 1);
+  };
+}
+
+/**
+ * Horizontal-run painter for the filled rasterisers. Runs never overlap, so
+ * unlike plotter() this needs no de-duplication — just clipping.
+ * @param {CanvasRenderingContext2D} ctx
+ * @returns {import("./raster.js").FillRun}
+ */
+function runner(ctx) {
+  const canvas = ctx.canvas;
+  return (x, y, w) => {
+    if (y < 0 || y >= canvas.height) return;
+    const from = Math.max(0, x);
+    const to = Math.min(canvas.width, x + w);
+    if (to > from) ctx.fillRect(from, y, to - from, 1);
+  };
 }
 
 /**

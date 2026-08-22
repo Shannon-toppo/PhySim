@@ -70,8 +70,15 @@ that:
   cannot run on macOS at all, so **PhySim implements the monitor simulation itself**.
   It listens on port 14238 speaking the same protocol the exe does, renders the
   microcontroller's draw calls onto `<canvas>` inside the PhySim panel, and sends
-  touch input back. The monitor scale follows the Zoom dropdown, a trackpad pinch,
-  or Ctrl/Cmd + wheel.
+  touch input back. Shapes are rasterised onto the pixel grid rather than drawn as
+  anti-aliased paths, so they stay hard-edged like an in-game monitor. The monitor
+  scale follows the Zoom dropdown, a trackpad pinch, or Ctrl/Cmd + wheel.
+- **Colours** — LifeBoatAPI gamma-corrects every colour in Lua to replicate what the
+  game does to monitors, which lifts dark tones a lot: a `setColor` of 30 arrives as
+  112, and anything from 217 up clips to white. PhySim draws the values as they
+  arrive, exactly as the exe would. Tick **True colour** in the Monitors header to
+  undo that correction and see the raw `setColor` values instead — off by default,
+  since the washed-out look is the faithful one.
 
 Since that rendering is an independent reimplementation and not the game's own, it
 differs from the real simulator in a few ways:

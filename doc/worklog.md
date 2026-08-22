@@ -73,6 +73,43 @@ Lua 側 `injectAsInputs` と JS 側 `refreshChannelTable` の両方に同じ式�
    注意：テンプレート内の HTML コメントに二重波括弧のリテラルを書くと leftover 検知が誤爆する。
 6. **ドキュメント同期**：README EN/JP・CLAUDE.md 更新、version 0.3.0。
 
+## モニタープロトコルの引数個数バグ（v0.4.4, 2026-08）
+
+自前のモニターシミュレーション（macOS 常時 / Windows は `physim.monitors.useBuiltInOnWindows`）で、
+三角形を使う描画だけが大きく崩れるという報告。三角形ファンで多角形を塗る PFD スクリプトでは
+空と地面のポリゴンが斜めに割れ、バンク角ポインタの三角形が画面最上部まで縦に伸びていた。
+
+**原因** — LifeBoatAPI の `Simulator_ScreenAPI.lua` は `drawTriangle` / `drawTriangleF` を
+どちらも 8 パラメータで送る：
+
+```
+TRIANGLE|screen|fill|x1|y1|x2|y2|x3|y3
+```
+
+ところが `src/simStubServer.ts` の `ARG_COUNTS` が `TRIANGLE: 7` になっていた。
+
+厄介なのは、この不一致が**例外にもコマンド落ちにもならない**こと。`splitBody(body, limit)` は
+TEXT / TEXTBOX の末尾自由テキスト（それ自体が `|` を含みうる）を保つために、`limit` に達した
+時点で残りを最後のフィールドへまとめる設計になっている。したがって個数が 1 つ足りないと、
+最後のフィールドが `"30|42"` のような文字列になり、`parseFloat("30|42")` が `30` を返して
+そのまま通る。結果 `y3` が読まれず `media/mcScreen.js` 側で `n(c[8])` が `0` になり、
+**すべての三角形の第3頂点が y=0 に貼り付いていた**。
+
+**教訓** — 可変長の末尾フィールドを許すパーサでは、引数個数テーブルが上流の送信側と
+1 つでもずれると、壊れ方が「明確なエラー」ではなく「もっともらしい数値」になる。
+`ARG_COUNTS` は上流の `sendCommand(...)` 呼び出しと 1 対 1 で対応させること。
+
+**対応**
+- `ARG_COUNTS.TRIANGLE` を 8 に修正（なぜ短いと黙って壊れるのかをコメントで明記）
+- 他コマンド（`COLOUR` / `CLEAR` / `LINE` / `CIRCLE` / `RECT` / `TEXT` / `TEXTBOX` / `MAP*` /
+  `SCREENCONFIG`）の個数も `Simulator_ScreenAPI.lua` / `Simulator.lua` の送信箇所と
+  総当たりで照合。ずれていたのは `TRIANGLE` のみ
+- `test/simstub.test.mjs` に、塗り／枠線それぞれ 6 座標が保持されることを検証する
+  回帰テストを追加
+
+影響範囲は自前モニターシミュレーションのみで、Windows 既定の `STORMWORKS_Simulator.exe`
+経由の表示、および CH1–17 のチャンネル仕様には影響しない。
+
 ## ファイル構成（最終）
 ```
 PhySim/

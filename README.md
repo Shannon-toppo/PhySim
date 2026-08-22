@@ -49,6 +49,8 @@ The values are streamed over a local TCP socket to a small Lua helper
 ## Platform support
 
 - **Windows** — uses LifeBoatAPI's own simulator UI (`STORMWORKS_Simulator.exe`) unmodified.
+  PhySim's own monitor view can be switched on instead — see
+  [Built-in monitors on Windows](#built-in-monitors-on-windows-experimental) below.
 - **macOS** — LifeBoatAPI is Windows-only, so PhySim supplies the missing pieces
   itself, including its own monitor simulation (**beta**). See below.
 
@@ -70,8 +72,15 @@ that:
   cannot run on macOS at all, so **PhySim implements the monitor simulation itself**.
   It listens on port 14238 speaking the same protocol the exe does, renders the
   microcontroller's draw calls onto `<canvas>` inside the PhySim panel, and sends
-  touch input back. The monitor scale follows the Zoom dropdown, a trackpad pinch,
-  or Ctrl/Cmd + wheel.
+  touch input back. Shapes are rasterised onto the pixel grid rather than drawn as
+  anti-aliased paths, so they stay hard-edged like an in-game monitor. The monitor
+  scale follows the Zoom dropdown, a trackpad pinch, or Ctrl/Cmd + wheel.
+- **Colours** — LifeBoatAPI gamma-corrects every colour in Lua to replicate what the
+  game does to monitors, which lifts dark tones a lot: a `setColor` of 30 arrives as
+  112, and anything from 217 up clips to white. PhySim draws the values as they
+  arrive, exactly as the exe would. Tick **True colour** in the Monitors header to
+  undo that correction and see the raw `setColor` values instead — off by default,
+  since the washed-out look is the faithful one.
 
 Since that rendering is an independent reimplementation and not the game's own, it
 differs from the real simulator in a few ways:
@@ -86,6 +95,25 @@ differs from the real simulator in a few ways:
 
 Verified against LifeBoatAPI 0.0.33. The full investigation is in
 [`doc/macos-support.md`](doc/macos-support.md).
+
+### Built-in monitors on Windows (experimental)
+
+Set `physim.monitors.useBuiltInOnWindows` to `true` to render the microcontroller's
+monitors inside the PhySim panel on Windows too, instead of launching
+`STORMWORKS_Simulator.exe`. PhySim then suppresses the exe (through LifeBoatAPI's own
+`attachToExistingProcess` path) and answers on port 14238 in its place, so the two
+never compete for it. The setting takes effect on the next **F6** — no reload needed.
+
+If it doesn't seem to do anything, run **PhySim: Show Log** from the command palette
+— the log says which renderer each F6 chose, whether port 14238 was actually claimed,
+and whether the `_simulator.lua` patches applied.
+
+Off by default, and worth keeping off unless you want the panel: on Windows the real
+exe is the faithful renderer, and switching means accepting the same
+reimplementation caveats listed above — bitmap-font text, no terrain behind
+`screen.drawMap`, primary-touch only — plus the loss of the exe's input/output
+panels, which PhySim does not reproduce. Drive the channels from the PhySim panel
+instead.
 
 ## Coordinate system
 
@@ -184,6 +212,7 @@ After `require("PhySim")`, the global `PhySim` is the class table.
 | `physim.autoOpenOnSimulate`          | true    | Open the panel when LifeBoatAPI's "Run Simulator" starts.      |
 | `physim.panel.openLocation`          | beside  | Where to place the panel when it opens. `beside` = split beside the active editor; `newWindow` = open in a separate floating window (requires VSCode 1.85+). |
 | `physim.autoInjectLibraryPath`       | true    | Add `<extension>/lua/` to `lifeboatapi.stormworks.libs.libraryPaths`. |
+| `physim.monitors.useBuiltInOnWindows` | false  | **Experimental, Windows only.** Draw the monitors in the PhySim panel instead of launching `STORMWORKS_Simulator.exe`. Ignored on macOS, where the built-in monitors are the only option. |
 
 ## Development & tests
 

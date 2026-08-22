@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { normalize } from "./pathUtils";
 import { SimStubServer, SIM_STUB_PORT } from "./simStubServer";
+import { patchSimulatorLua } from "./simulatorLuaPatch";
+import { log } from "./log";
 
 // LifeBoatAPI's SimulatorSandbox builds its own restricted `require` that only
 // resolves Lua files under the project's root directories (the args passed to
@@ -22,42 +24,23 @@ import { SimStubServer, SIM_STUB_PORT } from "./simStubServer";
 //   * Patch the generated `_simulator.lua` to copy the host (non-sandboxed)
 //     `socket` library into the sandbox env as `_physim_socket`.
 
-const MARKER = "_physim_socket";
-
-// LifeBoatAPI's FileSystemUtils.findPathsInDir shells out to Windows
-// `dir "..." /b`, which on macOS makes every directory scan return nothing —
-// so SimulatorSandbox's require map ends up empty and the user's script can't
-// be loaded ("Could not find require: ..."). This runs at host level in
-// _simulator.lua (outside the sandbox, io.popen available), BEFORE
-// createSandbox, and swaps in a POSIX `find` with the same contract: bare
-// names, files ("/a-d") vs directories ("/ad").
-const DARWIN_FS_INJECTION = [
-  "",
-  "-- ==== PhySim injection (macOS): POSIX replacement for `dir /b` scans ====",
-  "LifeBoatAPI.Tools.FileSystemUtils.findPathsInDir = function(dirPath, commandlinePattern)",
-  "    local result = {}",
-  "    local kind = (commandlinePattern == \"/ad\") and \"d\" or \"f\"",
-  "    local process = io.popen('find \"' .. dirPath:linux() .. '\" -mindepth 1 -maxdepth 1 -type ' .. kind .. ' 2>/dev/null')",
-  "    for line in process:lines() do",
-  "        result[#result+1] = line:match(\"([^/]+)$\")",
-  "    end",
-  "    process:close()",
-  "    return result",
-  "end",
-  "-- ============================================================================",
-  ""
-].join("\n");
-
-const INJECTION = [
-  "",
-  "-- ==== PhySim injection (auto-added by Stormworks Physics Sensor Sim) ====",
-  "sandboxEnv._physim_socket = require(\"socket\")",
-  "-- ============================================================================",
-  ""
-].join("\n");
-
-const SANDBOX_LINE_RE =
-  /(local\s+sandboxEnv\s*=\s*LifeBoatAPI\.Tools\.SimulatorSandbox\.createSandbox\(rootDirs\)\s*)/;
+/**
+ * Whether PhySim renders the microcontroller's monitors itself this run.
+ *
+ * Always on macOS — `STORMWORKS_Simulator.exe` is a Windows binary and cannot
+ * run there at all. On Windows the real exe is the faithful renderer, so the
+ * built-in one is opt-in and experimental: enabling it suppresses the exe
+ * (LifeBoatAPI's own `attachToExistingProcess` path) and PhySim answers on
+ * port 14238 in its place, which also means losing the exe's input/output
+ * panels. Read per debug session, so toggling the setting takes effect on the
+ * next F6 rather than needing a window reload.
+ */
+export function useBuiltInMonitors(): boolean {
+  if (process.platform === "darwin") return true;
+  if (process.platform !== "win32") return false;
+  return vscode.workspace.getConfiguration()
+    .get<boolean>("physim.monitors.useBuiltInOnWindows", false) === true;
+}
 
 export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
   constructor(
@@ -72,19 +55,34 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
   ): Promise<vscode.DebugConfiguration | undefined | null> {
     if (config.type !== "lua" || config.name !== "Run Simulator") return config;
 
-    // (0) macOS only: LifeBoatAPI's STORMWORKS_Simulator.exe can't run here, so
-    // we stand in for it on 14238. The Lua client connects once with no retry
-    // as soon as it starts, so the listener has to be up before lua-debug
-    // spawns Lua — this hook is the last point where that is guaranteed.
-    if (this.stub) {
+    // (0) Stand in for STORMWORKS_Simulator.exe on 14238 when we are the ones
+    // drawing the monitors. The Lua client connects once with no retry as soon
+    // as it starts, so the listener has to be up before lua-debug spawns Lua —
+    // this hook is the last point where that is guaranteed.
+    const builtInMonitors = useBuiltInMonitors();
+    log(
+      `Simulate (F6) on ${process.platform}: monitors drawn by ` +
+      (builtInMonitors ? "PhySim (built-in)" : "LifeBoatAPI's STORMWORKS_Simulator.exe") +
+      (process.platform === "win32"
+        ? ` — physim.monitors.useBuiltInOnWindows = ${builtInMonitors}`
+        : "")
+    );
+    if (this.stub && builtInMonitors) {
       try {
         await this.stub.start();
+        log(`Listening on 127.0.0.1:${SIM_STUB_PORT} in place of the simulator exe.`);
       } catch (err) {
+        log(`FAILED to listen on ${SIM_STUB_PORT}: ${err instanceof Error ? err.message : String(err)}`);
         vscode.window.showErrorMessage(
           `PhySim: could not listen on port ${SIM_STUB_PORT} (${err instanceof Error ? err.message : String(err)}). ` +
           "Another process — possibly a previous simulator run — is using it, so the monitor view will stay blank."
         );
       }
+    } else if (this.stub?.isListening()) {
+      // The setting was turned off between runs: release the port so
+      // LifeBoatAPI's own exe can take it again.
+      await this.stub.stop();
+      log(`Released port ${SIM_STUB_PORT} back to LifeBoatAPI's simulator exe.`);
     }
 
     // (0b) macOS only: point cpath at our bundled universal luasocket .so and
@@ -114,25 +112,38 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
     );
     if (!already) (config.arg as string[]).push(luaDir);
 
-    // (2) Patch _simulator.lua to expose `socket` to the sandbox env.
+    // (2) Patch _simulator.lua: expose `socket` to the sandbox env, and — when
+    // we are drawing the monitors — stop LifeBoatAPI from launching the exe.
     if (typeof config.program !== "string") return config;
     const uri = vscode.Uri.file(config.program);
     try {
       const bytes = await vscode.workspace.fs.readFile(uri);
       const text = new TextDecoder("utf-8").decode(bytes);
-      if (text.indexOf(MARKER) !== -1) return config;
-      if (!SANDBOX_LINE_RE.test(text)) {
+      const result = patchSimulatorLua(text, {
+        posixFileScan: process.platform === "darwin",
+        builtInMonitors
+      });
+      log(
+        `_simulator.lua: socket injection ${result.sandboxLineFound ? "ok" : "FAILED"}` +
+        (builtInMonitors
+          ? `, exe launch suppressed ${result.beginSimulationFound ? "ok" : "FAILED"}`
+          : "")
+      );
+      if (!result.sandboxLineFound) {
         vscode.window.showWarningMessage(
           "PhySim: could not patch _simulator.lua (LifeBoatAPI sandbox line not found). " +
           "PhySim.lua will not be able to open a socket; falling back to raw require."
         );
-        return config;
       }
-      // The FS shim must run BEFORE createSandbox (it drives the sandbox's
-      // require-map scan), the socket line after it.
-      const before = process.platform === "darwin" ? DARWIN_FS_INJECTION : "";
-      const patched = text.replace(SANDBOX_LINE_RE, before + "$1" + INJECTION);
-      await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(patched));
+      if (builtInMonitors && !result.beginSimulationFound) {
+        vscode.window.showWarningMessage(
+          "PhySim: could not stop LifeBoatAPI from launching STORMWORKS_Simulator.exe " +
+          "(_beginSimulation call not found). It will compete with PhySim for port " +
+          `${SIM_STUB_PORT}, so the monitors may stay blank.`
+        );
+      }
+      if (!result.patched) return config;
+      await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(result.text));
     } catch (err) {
       vscode.window.showWarningMessage(
         "PhySim: failed to patch _simulator.lua: " + (err instanceof Error ? err.message : String(err))

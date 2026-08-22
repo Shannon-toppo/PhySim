@@ -36,6 +36,7 @@ export const recCountEl = mustGet("rec-count");
 export const monitorsSection = mustGet("monitors");
 export const monitorsList = mustGet("monitors-list");
 export const monitorZoomEl = /** @type {HTMLSelectElement} */ (mustGet("monitor-zoom"));
+export const monitorTrueColourEl = /** @type {HTMLInputElement} */ (mustGet("monitor-truecolour"));
 
 // vx-vz: linear velocity, ax-az: angular velocity (CH7-12, sent on the wire).
 // lax-laz / aax-aaz: linear / angular acceleration — webview-only, they drive

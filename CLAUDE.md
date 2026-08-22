@@ -32,6 +32,8 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `roundtrip.test.mjs` — Node `encode()` bytes fed through `PhySim.lua`'s real `update()` parser and read back (frame splits, concatenation, corrupt-prefix resync).
 - `parity.test.mjs` — **the CH13–17 desync guard**: runs `media/channels.js` and `PhySim.lua:injectAsInputs` over the same vectors and asserts agreement to 1e-9. Extend its vector table whenever the derived-channel math changes.
 - Lua runs inside **fengari** (Lua 5.3 semantics in pure JS — same major version as lua-debug) via `test/helpers/luaRunner.mjs`, which stubs `_physim_socket` and drives `PhySim._buf` directly. No system Lua install needed.
+- `simulatorLuaPatch.test.mjs` — the `_simulator.lua` surgery: injection order (FS shim before `createSandbox`, socket after), the exe-launch suppression, idempotence, and the "upstream changed the template" cases that must warn instead of guessing.
+- `raster.test.mjs` — `media/raster.js`: exact pixel sets for axis-aligned and 45° lines, circle symmetry, triangle coverage, and the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
 - `simstub.test.mjs` — the shared `frame.ts` framing (prefix encode/decode, split/concat/corrupt-prefix resync) plus `simStubServer.ts`'s protocol handling: `SCREENCONFIG` → `SCREENSIZE`, portrait swap, `TICKEND` buffering/flush, draw-command parsing, and `sendTouch()`'s wire shape.
 
 ## Architecture — three boundaries, three runtimes
@@ -49,7 +51,7 @@ Extension host (Node, TypeScript)  ──  TCP 14239 (length-prefixed text)  ─
                                                                           (user microcontroller code)
 ```
 
-On macOS, a second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) — stands in for LifeBoatAPI's Windows-only `STORMWORKS_Simulator.exe`, which the sandboxed Lua otherwise connects to directly. It answers the same `SimulatorConnection.lua` protocol and forwards parsed screen config/draw commands to the WebView, where `media/mcScreen.js` renders the microcontroller's monitors on `<canvas>`. `src/frame.ts` holds the `%04d`-length-prefixed framing shared by both TCP servers.
+A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) — stands in for LifeBoatAPI's Windows-only `STORMWORKS_Simulator.exe`, which the sandboxed Lua otherwise connects to directly. It runs whenever `useBuiltInMonitors()` (in `debugConfigPatcher.ts`) is true: always on macOS, and on Windows only with the experimental `physim.monitors.useBuiltInOnWindows` setting. It answers the same `SimulatorConnection.lua` protocol and forwards parsed screen config/draw commands to the WebView, where `media/mcScreen.js` renders the microcontroller's monitors on `<canvas>`. `src/frame.ts` holds the `%04d`-length-prefixed framing shared by both TCP servers.
 
 1. **`media/`** — the WebView, split into ES modules loaded via relative imports from the entry `panel.js` (the CSP nonce on the entry `<script type="module">` propagates to the whole module graph — no `buildHtml` changes needed when adding a module):
    - `panel.js` — entry point; wires toolbar/keyboard/message events and the render loop only.
@@ -61,7 +63,9 @@ On macOS, a second TCP server — `SimStubServer` on port 14238 (`src/simStubSer
    - `messaging.js` — `readState()` / `sendState()` / rAF-debounced `scheduleSend()`.
    - `simulation.js` — fixed-timestep integration (60 Hz accumulator) + recording/playback.
    - `presets.js` — preset save/load/delete UI intents.
-   - `mcScreen.js` — macOS-only microcontroller monitor rendering; draws `SimStubServer`'s forwarded screen config/draw commands to `<canvas>` and relays touch input back.
+   - `mcScreen.js` — microcontroller monitor rendering (always on macOS, opt-in on Windows); draws `SimStubServer`'s forwarded screen config/draw commands to `<canvas>` and relays touch input back. See "Monitor colours" below before touching `rgba()`.
+   - `pixelFont.js` — the hand-drawn 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush).
+   - `raster.js` — **integer-grid line/circle/triangle rasterisers, pure module** (no DOM/canvas — the target is a `plot`/`fillRun` callback) so `test/raster.test.mjs` can run them in Node. Canvas path drawing anti-aliases, which the integer CSS upscale magnifies into a visible haze; Stormworks monitors have no AA. Every rasteriser clips to the screen, so a microcontroller passing ±1e9 coordinates can't hang the panel.
    Coordinate convention is **Stormworks left-handed (X+ East, Y+ Up, Z+ North)** — three.js itself is right-handed, so the camera is positioned to make `+Z` look like "into the screen / north" without any scene-level flipping. The modules are vanilla JS with JSDoc types, checked by `npm run check:media` (strict).
 
 2. **`src/`** — the extension host.
@@ -71,7 +75,8 @@ On macOS, a second TCP server — `SimStubServer` on port 14238 (`src/simStubSer
    - `debugConfigPatcher.ts` is the **critical glue**: see "LifeBoatAPI integration" below.
    - `libraryPathInjector.ts` writes the bundled `lua/` path into `lifeboatapi.stormworks.libs.libraryPaths` for editor autocompletion. Re-run on `onDidChangeWorkspaceFolders`. The **runtime** does not depend on this setting — only autocomplete does.
    - `pathUtils.ts` — shared `normalize()` for Windows-safe path comparison (used by both files above).
-   - `simStubServer.ts` (macOS only) — the port-14238 stand-in for `STORMWORKS_Simulator.exe`; started from `debugConfigPatcher.ts` before `lua-debug` spawns Lua.
+   - `simStubServer.ts` — the port-14238 stand-in for `STORMWORKS_Simulator.exe`; started from `debugConfigPatcher.ts` before `lua-debug` spawns Lua, whenever `useBuiltInMonitors()` says PhySim is drawing the monitors.
+   - `simulatorLuaPatch.ts` — the `_simulator.lua` text surgery (socket injection, POSIX file-scan shim, exe-launch suppression) as a **pure, `vscode`-free module** so `test/simulatorLuaPatch.test.mjs` can run it in Node.
    - `frame.ts` — the `%04d`-length-prefixed framing shared by `physServer.ts` and `simStubServer.ts`.
 
 3. **`lua/PhySim.lua`** — runs inside LifeBoatAPI's sandbox.
@@ -87,13 +92,14 @@ On macOS, a second TCP server — `SimStubServer` on port 14238 (`src/simStubSer
 We solve both barriers in `debugConfigPatcher.ts`'s `resolveDebugConfigurationWithSubstitutedVariables`, which VSCode calls during `vscode.debug.startDebugging` AFTER LifeBoatAPI has written `_build/_simulator.lua` but BEFORE `lua-debug` spawns Lua:
 
 1. **Append the bundled `lua/` dir to `config.arg`.** LifeBoatAPI's `_simulator.lua` does `for i=3, #arg do rootDirs[...] = arg[i] end`, so anything we push gets indexed by `SimulatorSandbox`'s require map. This is why PhySim works in any LifeBoatAPI project without per-project setup — do NOT replace this with a settings-file approach.
-2. **Patch `_simulator.lua`** to insert `sandboxEnv._physim_socket = require("socket")` right after the `createSandbox(rootDirs)` line. The regex `SANDBOX_LINE_RE` matches that line; the `_physim_socket` marker prevents double-patching.
+2. **Patch `_simulator.lua`** to insert `sandboxEnv._physim_socket = require("socket")` right after the `createSandbox(rootDirs)` line. The regex `SANDBOX_LINE_RE` matches that line; the `_physim_socket` marker prevents double-patching. All of the `_simulator.lua` text surgery lives in `simulatorLuaPatch.ts`, which imports no `vscode` so the tests can drive it directly.
+3. **Flip `_beginSimulation(false, …)` to `true`** whenever `useBuiltInMonitors()` is true. That `false` is LifeBoatAPI's own `attachToExistingProcess` flag, and the `true` path skips the `io.popen` that launches `STORMWORKS_Simulator.exe` — the Lua then connects to whatever already holds 14238, which is `SimStubServer`. Without this the real exe would fight us for the port on Windows (on macOS the launch just fails harmlessly, but there is no reason to attempt it). `Simulator.lua` only ever *assigns* `_simulatorProcess`, so nothing downstream misses the handle.
 
 On `process.platform === "darwin"`, two more patches apply:
 
-3. **Prepend `luasocket/darwin/?.so` to `config.cpath`.** LifeBoatAPI's own cpath entries are literal `.dll` file paths with no `?` template, and Lua's `package.searchpath` returns the first *readable* file regardless of module name — so our entry must be prepended, never appended, or it's never tried. See `doc/macos-support.md` for the discovery.
-4. **Override `config.luaArch`** to the native arch (`arm64` or `x86_64`) — LifeBoatAPI hardcodes `"x86"`, which would otherwise run Lua under Rosetta instead of natively.
-5. **Replace `FileSystemUtils.findPathsInDir`** (injected into `_simulator.lua` right *before* the `createSandbox` line, while the socket line goes after). LifeBoatAPI enumerates files with Windows `dir "..." /b`, which returns nothing on macOS — the sandbox's require map ends up empty and the user's script fails with "Could not find require". The shim uses POSIX `find -mindepth 1 -maxdepth 1 -type f|d` and returns bare names, matching the original contract. See `doc/macos-support.md` blocker 4.
+4. **Prepend `luasocket/darwin/?.so` to `config.cpath`.** LifeBoatAPI's own cpath entries are literal `.dll` file paths with no `?` template, and Lua's `package.searchpath` returns the first *readable* file regardless of module name — so our entry must be prepended, never appended, or it's never tried. See `doc/macos-support.md` for the discovery.
+5. **Override `config.luaArch`** to the native arch (`arm64` or `x86_64`) — LifeBoatAPI hardcodes `"x86"`, which would otherwise run Lua under Rosetta instead of natively.
+6. **Replace `FileSystemUtils.findPathsInDir`** (injected into `_simulator.lua` right *before* the `createSandbox` line, while the socket line goes after). LifeBoatAPI enumerates files with Windows `dir "..." /b`, which returns nothing on macOS — the sandbox's require map ends up empty and the user's script fails with "Could not find require". The shim uses POSIX `find -mindepth 1 -maxdepth 1 -type f|d` and returns bare names, matching the original contract. See `doc/macos-support.md` blocker 4.
 
 Constraints this puts on `lua/PhySim.lua`:
 
@@ -110,6 +116,18 @@ Constraints this puts on `lua/PhySim.lua`:
 The Stormworks tick rate (60 Hz) is baked into the m/tick → m/s and rad/tick → RPS conversions for CH13 and CH14.
 
 CH4–6 are normalized to **[-π, π)**. That math is also doubled: `normalizeAngle()` in `media/channels.js` (applied in `readState()` and in the integrator so the pose inputs stay wrapped too) and `_normAngle` in `lua/PhySim.lua` (applied when `update()` parses a frame, so `phys:rotation()` and CH4–6 always agree). Lua's `%` is floor-modulo and JS' is a remainder — the JS side needs the sign fix-up, the Lua side doesn't. Wrapping is idempotent, so applying it on both sides is harmless. `test/roundtrip.test.mjs` pins the Lua half against the JS twin.
+
+## Monitor colours (macOS panel)
+
+LifeBoatAPI gamma-corrects every colour **in Lua** before it reaches us —
+`Simulator_ScreenAPI.lua`'s `_setColorBase` does `255 * ((c/255)/0.85)^(1/2.4)`
+— to replicate what the game does to monitors. It lifts dark tones hard: a
+`setColor` of 30 arrives as 112, and anything from 217 up clips to white. The
+washed-out result is *correct*; don't "fix" it by changing `rgba()`.
+
+The correction is applied unclamped (255 leaves as 272.9), so the panel's
+optional **True colour** toggle (`unGamma`, off by default) inverts it
+losslessly back to the original `setColor` values.
 
 ## Coordinate / sign conventions
 

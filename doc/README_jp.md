@@ -51,6 +51,8 @@ PIDコントローラー・INS・オートパイロットなどのロジック�
 ## 対応プラットフォーム
 
 - **Windows** — LifeBoatAPI 自体のシミュレーターUI（`STORMWORKS_Simulator.exe`）をそのまま使用します。
+  PhySim 側のモニター表示に切り替えることもできます（後述の
+  [Windowsで自前のモニター表示を使う](#windowsで自前のモニター表示を使う実験的機能)）。
 - **macOS** — LifeBoatAPI が Windows 専用のため、モニターシミュレーション（**ベータ版**）を
   含めて PhySim 側で自前に用意しています。詳細は下記。
 
@@ -68,8 +70,16 @@ LifeBoatAPI（`NameousChangey.lifeboatapi` 0.0.33）は Windows 用バイナリ�
 - **シミュレーターウィンドウ** — `STORMWORKS_Simulator.exe` は Windows 実行ファイルで
   macOS では動かしようがないため、**モニターシミュレーション機能を PhySim が自前で実装**
   しています。exe と同じプロトコルで14238番ポートを待ち受け、マイコンの描画命令を
-  PhySim パネル内の `<canvas>` に描画し、タッチ入力を返します。表示倍率は Zoom の
-  ドロップダウン、トラックパッドのピンチ、Ctrl/Cmd + ホイールで変更できます。
+  PhySim パネル内の `<canvas>` に描画し、タッチ入力を返します。図形はアンチエイリアス
+  されたパスではなくピクセルグリッド上にラスタライズするので、ゲーム内のモニターと同じ
+  ドット感になります。表示倍率は Zoom のドロップダウン、トラックパッドのピンチ、
+  Ctrl/Cmd + ホイールで変更できます。
+- **色** — LifeBoatAPI はゲームの見た目を再現するためLua側で全ての色にガンマ補正を
+  かけており、暗い色ほど大きく持ち上げられます（`setColor` の30は112として届き、
+  217以上は白に張り付きます）。PhySim は exe と同様、届いた値をそのまま描画します。
+  Monitors ヘッダーの **True colour** をONにするとこの補正を打ち消し、`setColor` に
+  渡した生の値で表示します。デフォルトはOFFです（白っぽい見え方がゲーム再現として
+  正しいため）。
 
 ゲーム本体の描画ではなく独自の再実装のため、本来のシミュレーターとは以下の点が異なります。
 
@@ -81,6 +91,23 @@ LifeBoatAPI（`NameousChangey.lifeboatapi` 0.0.33）は Windows 用バイナリ�
 
 LifeBoatAPI 0.0.33 で動作確認済みです。調査の詳細は
 [`doc/macos-support.md`](macos-support.md) を参照してください。
+
+### Windowsで自前のモニター表示を使う（実験的機能）
+
+`physim.monitors.useBuiltInOnWindows` を `true` にすると、Windows でも
+`STORMWORKS_Simulator.exe` を起動せず、マイコンのモニターを PhySim パネル内に
+描画します。この場合 PhySim は LifeBoatAPI 自身の `attachToExistingProcess` の経路を
+使って exe の起動を抑止し、代わりに14238番ポートに応答するので、ポートの奪い合いは
+起きません。設定は次の **F6** から反映され、ウィンドウの再読み込みは不要です。
+
+ONにしても変化が無い場合は、コマンドパレットから **PhySim: Show Log** を実行してください。
+F6ごとにどちらの描画を選んだか、14238番ポートを実際に確保できたか、`_simulator.lua` への
+パッチが当たったかがログに出ます。
+
+デフォルトはOFFで、パネル内で見たい理由が特に無ければOFFのままを推奨します。Windows では
+実物の exe の方が忠実で、切り替えると上記の再実装由来の制約（ビットマップフォントの文字、
+地形データの無い `screen.drawMap`、プライマリのみのタッチ）に加えて、PhySim が再現していない
+exe の入出力パネルも失われるためです。チャンネルは PhySim パネルから操作してください。
 
 ## 座標系
 
@@ -181,6 +208,7 @@ Stormworksは**左手系**ワールド座標系を使用しています:
 | `physim.autoOpenOnSimulate`          | true       | LifeBoatAPIの「Run Simulator」起動時にパネルを自動で開く               |
 | `physim.panel.openLocation`          | beside     | パネルを開く位置。`beside` = アクティブエディタの隣に分離、`newWindow` = 別ウィンドウで開く（VSCode 1.85以降が必要） |
 | `physim.autoInjectLibraryPath`       | true       | `<extension>/lua/` を `lifeboatapi.stormworks.libs.libraryPaths` に追加 |
+| `physim.monitors.useBuiltInOnWindows` | false     | **実験的機能・Windows専用。** `STORMWORKS_Simulator.exe` を起動せず、モニターを PhySim パネルに描画する。macOSでは自前実装しか選択肢が無いため無視されます |
 
 ## 開発とテスト
 

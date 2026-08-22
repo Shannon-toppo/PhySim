@@ -1,4 +1,8 @@
-// macOS stand-in for LifeBoatAPI's Windows-only STORMWORKS_Simulator.exe.
+// Stand-in for LifeBoatAPI's Windows-only STORMWORKS_Simulator.exe. Always
+// used on macOS, where the exe cannot run at all; on Windows only when the
+// user opts in (`physim.monitors.useBuiltInOnWindows`), in which case
+// debugConfigPatcher also stops LifeBoatAPI from launching the real exe so
+// the two don't fight over the port.
 //
 // LifeBoatAPI's Lua simulator opens a TCP connection to 127.0.0.1:14238 (the
 // port is hardcoded in its SimulatorConnection.lua), immediately sends

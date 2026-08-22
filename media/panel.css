@@ -117,7 +117,14 @@ body {
   flex: none;
 }
 
-.monitor-zoom {
+.monitor-opts {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.monitor-zoom,
+.monitor-check {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -125,6 +132,16 @@ body {
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.monitor-check {
+  cursor: pointer;
+  user-select: none;
+}
+
+.monitor-check input {
+  margin: 0;
+  accent-color: var(--vscode-focusBorder, #007fd4);
 }
 
 .monitor-zoom select {

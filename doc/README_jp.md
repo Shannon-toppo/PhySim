@@ -51,12 +51,36 @@ PIDコントローラー・INS・オートパイロットなどのロジック�
 ## 対応プラットフォーム
 
 - **Windows** — LifeBoatAPI 自体のシミュレーターUI（`STORMWORKS_Simulator.exe`）をそのまま使用します。
-- **macOS** — LifeBoatAPIがWindows用の `.dll` しか同梱していないため、PhySimがLua 5.3向けの
-  universalバイナリ（arm64 + x86_64）のluasocketを同梱して補います。また、Windows専用の
-  `STORMWORKS_Simulator.exe` の代役として14238番ポートでも待ち受け、マイコンのモニター画面を
-  PhySimパネル内にタッチ入力付きで描画します。モニターの表示倍率はZoomのドロップダウンのほか、
-  トラックパッドのピンチ（Ctrl/Cmd + ホイールも同じ）でも変えられます。
-  LifeBoatAPI 0.0.33で動作確認済みです。
+- **macOS** — LifeBoatAPI が Windows 専用のため、モニターシミュレーション（**ベータ版**）を
+  含めて PhySim 側で自前に用意しています。詳細は下記。
+
+### macOS — モニターシミュレーションはPhySimの自前実装
+
+> **この機能はベータ版です。** モニターシミュレーションは上流ではなくPhySimが自前で
+> 実装・保守しているため、描画・プロトコル処理・UIがリリース間で破壊的に変更される
+> 可能性があります（利用側の対応が必要になる変更を含みます）。
+
+LifeBoatAPI（`NameousChangey.lifeboatapi` 0.0.33）は Windows 用バイナリしか同梱しておらず、
+何もしなければ macOS ではデバッグセッションすら起動しません。PhySim 側で次のように回避しています。
+
+- **luasocket** — LifeBoatAPI が Windows の `.dll` しか持たないため、Lua 5.3 向けの
+  universal バイナリ（arm64 + x86_64）を同梱し、Lua の `cpath` に差し込みます。
+- **シミュレーターウィンドウ** — `STORMWORKS_Simulator.exe` は Windows 実行ファイルで
+  macOS では動かしようがないため、**モニターシミュレーション機能を PhySim が自前で実装**
+  しています。exe と同じプロトコルで14238番ポートを待ち受け、マイコンの描画命令を
+  PhySim パネル内の `<canvas>` に描画し、タッチ入力を返します。表示倍率は Zoom の
+  ドロップダウン、トラックパッドのピンチ、Ctrl/Cmd + ホイールで変更できます。
+
+ゲーム本体の描画ではなく独自の再実装のため、本来のシミュレーターとは以下の点が異なります。
+
+- 文字は手書きの 4x5 ビットマップフォントで描画するため、ゲーム内フォントに近いものの
+  完全に同じ字形ではありません
+- `screen.drawMap` の背後に地形データが無いため、代わりに海一色で塗りつぶします
+- タッチはプライマリのみ（alt 側のタッチ値は常に 0）
+- exe の入出力パネルは再現していません。チャンネルは PhySim パネルから操作してください
+
+LifeBoatAPI 0.0.33 で動作確認済みです。調査の詳細は
+[`doc/macos-support.md`](macos-support.md) を参照してください。
 
 ## 座標系
 

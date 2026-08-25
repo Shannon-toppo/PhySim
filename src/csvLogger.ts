@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as path from "path";
 
 // CSV channel logging — the extension-host half. Deliberately dumb about what
 // a channel is: the webview (media/logging.js + media/csv.js) owns the column
@@ -94,4 +95,23 @@ export function defaultLogFileName(now: Date = new Date()): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `physim-log-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`
     + `-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}.csv`;
+}
+
+/**
+ * Where the save dialog should start, given the first workspace folder (if
+ * any) and the user's home directory.
+ *
+ * The result must be ABSOLUTE. Handing the dialog a bare file name yields a
+ * drive-relative `\name.csv` on Windows, which the native dialog refuses —
+ * it never opens, and PhySim looks like it ignored the button. macOS resolves
+ * the same input to `/name.csv` and opens happily, which is why this only
+ * ever showed up on Windows.
+ */
+export function defaultLogPath(
+  workspaceDir: string | null | undefined,
+  homeDir: string,
+  now?: Date
+): string {
+  const base = workspaceDir && workspaceDir.length > 0 ? workspaceDir : homeDir;
+  return path.join(base, defaultLogFileName(now));
 }

@@ -9,7 +9,9 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { CsvLogger, CSV_EOL, sanitizeRows, defaultLogFileName } from "../out/csvLogger.js";
+import {
+  CsvLogger, CSV_EOL, sanitizeRows, defaultLogFileName, defaultLogPath
+} from "../out/csvLogger.js";
 import { CSV_HEADER, createLog, tickRow } from "../media/csv.js";
 
 function tmpFile(name = "log.csv") {
@@ -96,6 +98,25 @@ test("a row that smuggles a newline can't add a record", async () => {
   logger.write(["a,b\nc,d"]);
   await logger.stop();
   assert.equal(fs.readFileSync(file, "utf8").split(CSV_EOL).filter(Boolean).length, 1);
+});
+
+test("defaultLogPath is absolute with a workspace folder and without one", () => {
+  const at = new Date(2026, 7, 26, 9, 5, 3);
+  const ws = path.join(path.sep, "work", "mc");
+  assert.equal(
+    defaultLogPath(ws, path.join(path.sep, "home", "u"), at),
+    path.join(ws, "physim-log-20260826-090503.csv")
+  );
+  // No folder open — the dialog still needs somewhere real to start. A bare
+  // file name here is what kept the Windows save dialog from ever opening.
+  const home = path.join(path.sep, "home", "u");
+  const fallback = defaultLogPath(undefined, home, at);
+  assert.equal(fallback, path.join(home, "physim-log-20260826-090503.csv"));
+  for (const p of [defaultLogPath(ws, home, at), fallback,
+                   defaultLogPath(null, home, at), defaultLogPath("", home, at)]) {
+    assert.ok(path.isAbsolute(p), `${p} must be absolute`);
+    assert.notEqual(path.dirname(p), ".");
+  }
 });
 
 test("default file name sorts chronologically and ends in .csv", () => {

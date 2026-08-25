@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
+import * as os from "os";
 import { PhysServer, PhysState, ZERO_STATE } from "./physServer";
 import { SimStubServer } from "./simStubServer";
-import { CsvLogger, defaultLogFileName } from "./csvLogger";
+import { CsvLogger, defaultLogPath } from "./csvLogger";
 import { log } from "./log";
 
 type Triple = [number, number, number];
@@ -71,6 +72,7 @@ export class PhysSimPanelManager {
   private panelLocation: OpenLocation | null = null;
   private disposables: vscode.Disposable[] = [];
   private csv = new CsvLogger();
+  private csvDialogOpen = false;
 
   constructor(
     private ctx: vscode.ExtensionContext,
@@ -267,34 +269,67 @@ export class PhysSimPanelManager {
   }
 
   /**
+   * Where the save dialog starts. Must be an ABSOLUTE path: a URI built from a
+   * bare file name resolves to a drive-relative `\name.csv` on Windows, which
+   * the native dialog refuses to open — and the throw used to vanish into the
+   * message handler, leaving the panel's button waiting forever.
+   */
+  private defaultCsvUri(): vscode.Uri {
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
+    // fsPath, not the URI: CsvLogger writes with node fs on the extension
+    // host, so a non-file scheme could not be logged to anyway.
+    return vscode.Uri.file(defaultLogPath(folder?.fsPath, os.homedir()));
+  }
+
+  /**
    * Ask for a destination and open the log. The webview's button only lights
    * up on the csvState we post back, so cancelling the dialog simply leaves
-   * logging off.
+   * logging off — but every exit from here MUST post one, or the panel is
+   * stuck with no way to retry.
    */
   private async startCsvLog(): Promise<void> {
     if (this.csv.isLogging()) { this.postCsvState(true); return; }
-    const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
-    const defaultUri = folder
-      ? vscode.Uri.joinPath(folder, defaultLogFileName())
-      : vscode.Uri.file(defaultLogFileName());
-    const target = await vscode.window.showSaveDialog({
-      defaultUri,
-      filters: { "CSV": ["csv"] },
-      saveLabel: "Start logging",
-      title: "PhySim: log channel values to"
-    });
-    if (!target) { this.postCsvState(false); return; }
-    try {
-      this.csv.start(target.fsPath);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      vscode.window.showErrorMessage(`PhySim: could not open CSV log: ${message}`);
-      log(`CSV log open failed for ${target.fsPath}: ${message}`);
-      this.postCsvState(false);
+    // A second click while the dialog is already up would stack another one.
+    if (this.csvDialogOpen) {
+      log("CSV log start ignored: the save dialog is already open.");
       return;
     }
-    log(`CSV log started: ${this.csv.getPath()}`);
-    this.postCsvState(true);
+    this.csvDialogOpen = true;
+    try {
+      const defaultUri = this.defaultCsvUri();
+      log(`CSV log: opening the save dialog at ${defaultUri.fsPath}`);
+      const target = await vscode.window.showSaveDialog({
+        defaultUri,
+        filters: { "CSV": ["csv"] },
+        saveLabel: "Start logging",
+        title: "PhySim: log channel values to"
+      });
+      if (!target) {
+        log("CSV log: the save dialog was dismissed.");
+        this.postCsvState(false);
+        return;
+      }
+      try {
+        this.csv.start(target.fsPath);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`PhySim: could not open CSV log: ${message}`);
+        log(`CSV log open failed for ${target.fsPath}: ${message}`);
+        this.postCsvState(false);
+        return;
+      }
+      log(`CSV log started: ${this.csv.getPath()}`);
+      this.postCsvState(true);
+    } catch (err) {
+      // showSaveDialog itself failed. Without this the rejection is swallowed
+      // by the webview message handler and the panel never hears back.
+      const message = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`PhySim: could not open the save dialog: ${message}`);
+      log(`CSV log: showSaveDialog failed: ${message}`);
+      this.postCsvState(false);
+    } finally {
+      this.csvDialogOpen = false;
+    }
   }
 
   /**

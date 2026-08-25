@@ -13,7 +13,12 @@
 //
 // Starting is a round trip: the host may put a save dialog in front of the
 // user and they may cancel it, so the button only lights up once the host
-// answers with a csvState message.
+// answers with a csvState message. While waiting, the button says so rather
+// than just greying out — the dialog is native and can end up behind another
+// window (on Windows the LifeBoatAPI simulator exe is a separate top-level
+// window), and a silent grey button looks exactly like a dead feature. A
+// watchdog re-enables it so a reply that never comes can't wedge the panel;
+// the host ignores a second csvStart while its dialog is up.
 
 import { vscode } from "./vscodeApi.js";
 import { CSV_HEADER, createLog, tickRow, sendRow } from "./csv.js";
@@ -23,6 +28,7 @@ import { csvBtn, csvCountEl } from "./dom.js";
 // round trips a second for a file write that is happy to see them in chunks.
 const FLUSH_MS = 250;
 const MAX_PENDING = 240;      // ~4 s of ticks — flush early rather than grow
+const START_TIMEOUT_MS = 120000;   // a save dialog can legitimately sit open
 
 let logging = false;
 let pendingStart = false;     // waiting for the host's answer to csvStart
@@ -31,13 +37,24 @@ let log = createLog(0);
 let pending = [];
 /** @type {number} */
 let flushTimer = 0;
+/** @type {number} */
+let startWatchdog = 0;
 
 export function isLogging() { return logging; }
 
 function updateButton() {
   csvBtn.classList.toggle("recording", logging);
-  csvBtn.textContent = logging ? "■ Stop CSV" : "⬇ CSV Log";
+  csvBtn.textContent = pendingStart
+    ? "… Choose a file"
+    : (logging ? "■ Stop CSV" : "⬇ CSV Log");
+  csvBtn.title = pendingStart
+    ? "Waiting for the save dialog — it may have opened behind another window"
+    : "Stream CH1-17 to a CSV file for offline analysis";
   csvBtn.disabled = pendingStart;
+}
+
+function clearStartWatchdog() {
+  if (startWatchdog) { clearTimeout(startWatchdog); startWatchdog = 0; }
 }
 
 function updateCount() {
@@ -88,6 +105,7 @@ export function logSend(s) {
 export function applyCsvState(msg) {
   const on = msg.logging === true;
   pendingStart = false;
+  clearStartWatchdog();
   if (on && !logging) {
     log = createLog(performance.now());
     pending = [];
@@ -116,6 +134,15 @@ csvBtn.addEventListener("click", () => {
     pendingStart = true;
     updateButton();
     vscode.postMessage({ type: "csvStart" });
+    // If the host never answers, give the button back instead of leaving the
+    // panel with a permanently dead control.
+    clearStartWatchdog();
+    startWatchdog = setTimeout(() => {
+      startWatchdog = 0;
+      if (!pendingStart) return;
+      pendingStart = false;
+      updateButton();
+    }, START_TIMEOUT_MS);
   }
 });
 

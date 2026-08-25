@@ -14,6 +14,9 @@ automatically opens a panel containing:
 - sliders for linear and angular velocity, and for linear and angular acceleration
 - a **Simulate** toggle (Space) that integrates velocity and acceleration into
   position and rotation each tick, so the gizmo moves on its own
+- a **trail and velocity arrow** — the path of the last N ticks drawn in the 3D
+  scene plus an arrow along the current linear velocity, toggled from the
+  sidebar's *Visualization* section (trail length 2 / 5 / 10 / 30 seconds)
 - a live readout of all 17 channels
 
 The values are streamed over a local TCP socket to a small Lua helper
@@ -246,8 +249,9 @@ The following are under consideration. None are implemented yet — listed order
 
    ~~Currently velocity and position are independent: setting a velocity does not move the gizmo. A toggle that adds `velocity * dt` to position each tick would let PID controllers and attitude-stabilization MCs be debugged against time-varying CH1–3, much closer to in-game behavior.~~ → Implemented in v0.2.0
 
-3. **Trail / velocity-vector visualization**
-   Render the last N ticks of the object's path as a trail in the 3D scene, plus an arrow showing the current velocity vector. Especially useful in combination with the continuous physics mode above.
+3. ~~**Trail / velocity-vector visualization**~~
+
+   ~~Render the last N ticks of the object's path as a trail in the 3D scene, plus an arrow showing the current velocity vector. Especially useful in combination with the continuous physics mode above.~~ → Implemented in v0.4.5
 
 4. **Multiple physics sensor support**
    Some microcontrollers use more than one physics sensor block. Allowing multiple gizmo targets, each mapped to its own channel range, would cover this use case.

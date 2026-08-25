@@ -17,6 +17,7 @@ import { simBtn, recBtn, playBtn, recCountEl, readNum, writeNum } from "./dom.js
 import { targetGroup } from "./scene.js";
 import { syncInputsFromPose } from "./pose.js";
 import { readState, sendState } from "./messaging.js";
+import { resetTrail, sampleTrail } from "./visuals.js";
 
 const TICK_DT_MS = 1000 / 60;
 const MAX_CATCHUP_MS = 250;          // clamp after a stall so we don't fast-forward
@@ -66,6 +67,7 @@ function integrateOneTick() {
   targetGroup.rotation.y = normalizeAngle(targetGroup.rotation.y + ay);
   targetGroup.rotation.z = normalizeAngle(targetGroup.rotation.z + az);
 
+  sampleTrail();   // per tick, so a throttled rAF can't coarsen the trail
   if (recording) recordBuffer.push(readState());
 }
 
@@ -133,6 +135,7 @@ export function setPlaying(on) {
     if (recording) setRecording(false);
     if (simulating) setSimulating(false);
     playIndex = 0;
+    resetTrail();   // rewinding to frame 0 teleports; start the path fresh
     lastPlayTime = performance.now();
     playAccumulator = 0;
   }
@@ -153,6 +156,7 @@ function stepPlayback() {
     playAccumulator -= TICK_DT_MS;
     if (playIndex >= recordBuffer.length) { setPlaying(false); break; }
     applyFrame(recordBuffer[playIndex]);
+    sampleTrail();
     playIndex++;
     advanced = true;
   }

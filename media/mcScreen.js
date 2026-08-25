@@ -17,6 +17,21 @@
 //
 // The exe clears the screen between rendered frames and the MC's onDraw
 // repaints from scratch every frame, so each screenFrame starts from black.
+//
+// Everything draws into an ImageData buffer through a Uint32Array view, and
+// each monitor is uploaded with a single putImageData at the end of the
+// frame. The obvious implementation — ctx.fillRect(x, y, 1, 1) per pixel —
+// is what made monitor simulation eat a core: an A/B of the two on the same
+// frames put it 6-7x slower (500 commands: 2.85 ms vs 0.45 ms), and in the
+// visible panel a 500-command frame cost 11.6 ms, i.e. 70% of a core at
+// 60 Hz. Of the surviving 0.45 ms, the clear and the upload are 0.01 ms
+// between them — the rest is the rasterisers. See doc/worklog.md.
+//
+// Repaints are coalesced into one animation frame (scheduleRepaint). TICKEND
+// arrives ~60x a second and used to repaint synchronously from the message
+// handler, so bursts painted more often than the display could show — and a
+// panel in a background tab kept painting canvases nobody could see, because
+// retainContextWhenHidden keeps the webview receiving messages while hidden.
 
 import {
   monitorsSection, monitorsList, monitorZoomEl, monitorTrueColourEl
@@ -28,6 +43,7 @@ import {
 import {
   strokeLine, strokeCircle, fillCircle, strokeTriangle, fillTriangle
 } from "./raster.js";
+import { packColour, blendPixel } from "./blend.js";
 
 /**
  * @typedef {object} ScreenInfo
@@ -44,6 +60,8 @@ import {
  * @typedef {object} Monitor
  * @property {HTMLCanvasElement} canvas
  * @property {CanvasRenderingContext2D} ctx
+ * @property {ImageData} img the pixel buffer every draw call writes into
+ * @property {Uint32Array} u32 one word per pixel, a view over img.data
  * @property {HTMLElement} label
  * @property {ScreenInfo} info
  */
@@ -52,13 +70,8 @@ import {
 const monitors = new Map();
 
 // Text is rasterised from the hand-drawn 4x5 bitmap font in pixelFont.js, one
-// 1x1 fillRect per lit pixel. Canvas fillText at 5px would anti-alias into
+// buffer word per lit pixel. Canvas fillText at 5px would anti-alias into
 // grey mush that the integer CSS upscale then magnifies into unreadable blobs.
-
-/** Current draw colour, set by COLOUR and used until the next one. */
-let colour = "rgba(255,255,255,1)";
-/** MAP is a placeholder fill; MAPOCEAN gives it a plausible colour. */
-let oceanColour = "rgb(20,40,90)";
 
 /**
  * @param {string | number | undefined} v
@@ -103,14 +116,39 @@ function unGamma(c) {
 }
 
 /**
+ * A draw colour resolved for the pixel buffer. `packed` is the ready-to-store
+ * word for the common opaque case; the channels are kept for the blend path.
+ * The packed word always carries alpha 255 — the buffer is opaque, and the
+ * source alpha in `a` is what blendPixel() weighs the colour by.
+ * @typedef {object} Colour
+ * @property {number} packed
+ * @property {number} r
+ * @property {number} g
+ * @property {number} b
+ * @property {number} a 0-255
+ */
+
+/**
  * Alpha is not gamma-corrected on the Lua side, so it is passed through.
  * @param {number} r @param {number} g @param {number} b @param {number} a
- * @returns {string}
+ * @returns {Colour}
  */
-function rgba(r, g, b, a) {
+function makeColour(r, g, b, a) {
   if (trueColour) { r = unGamma(r); g = unGamma(g); b = unGamma(b); }
-  return `rgba(${clamp255(r)},${clamp255(g)},${clamp255(b)},${clamp255(a) / 255})`;
+  const cr = clamp255(r), cg = clamp255(g), cb = clamp255(b);
+  return { packed: packColour(cr, cg, cb, 255), r: cr, g: cg, b: cb, a: clamp255(a) };
 }
+
+/** Cleared-screen pixel, and the two colours a frame starts from. */
+const BLACK = packColour(0, 0, 0, 255);
+/** Frame-start colour. Never gamma-mapped — it is our default, not the MC's. */
+const WHITE = { packed: packColour(255, 255, 255, 255), r: 255, g: 255, b: 255, a: 255 };
+const DEFAULT_OCEAN = { packed: packColour(20, 40, 90, 255), r: 20, g: 40, b: 90, a: 255 };
+
+/** Current draw colour, set by COLOUR and used until the next one. */
+let colour = WHITE;
+/** MAP is a placeholder fill; MAPOCEAN gives it a plausible colour. */
+let oceanColour = DEFAULT_OCEAN;
 
 // --- Scaling ---------------------------------------------------------------
 //
@@ -382,6 +420,9 @@ export function applyScreenConfig(screens) {
   monitorsSection.classList.toggle("hidden", monitors.size === 0);
   // After unhiding, monitorsList finally has a real clientWidth for "fit".
   relayout();
+  // A resized or newly powered-on screen starts black; repaint the frame we
+  // already have instead of waiting for the next TICKEND.
+  scheduleRepaint();
 }
 
 /**
@@ -406,16 +447,17 @@ function createMonitor(num, w, h, info) {
 
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("PhySim panel: 2D canvas context unavailable");
-  ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, w, h);
+  const img = ctx.createImageData(w, h);
+  const u32 = new Uint32Array(img.data.buffer);
+  u32.fill(BLACK);
+  ctx.putImageData(img, 0, 0);
 
   wrapper.appendChild(label);
   wrapper.appendChild(canvas);
   monitorsList.appendChild(wrapper);
 
   attachTouch(canvas, num);
-  const m = { canvas, ctx, label, info };
+  const m = { canvas, ctx, img, u32, label, info };
   applyScale(m);
   return m;
 }
@@ -431,79 +473,91 @@ function createMonitor(num, w, h, info) {
 let lastCommands = [];
 
 /**
- * Repaint every monitor from one frame's accumulated draw calls.
+ * Take one frame's accumulated draw calls. The repaint itself waits for the
+ * next animation frame — see scheduleRepaint.
  * @param {DrawCommand[]} commands
  */
 export function applyScreenFrame(commands) {
   lastCommands = Array.isArray(commands) ? commands : [];
-  repaint();
+  scheduleRepaint();
+}
+
+/** Whether a repaint is already booked for the next animation frame. */
+let repaintPending = false;
+
+/**
+ * Book a repaint for the next animation frame, at most one per frame.
+ *
+ * Frames arrive from the simulator at its own cadence, not the display's, and
+ * only the newest one is worth drawing — lastCommands already holds it. This
+ * also means a hidden panel does no drawing at all: the webview keeps
+ * receiving messages while hidden (retainContextWhenHidden), but rAF doesn't
+ * run, so the work is skipped and resumes with the latest frame on the
+ * callback that fires when the panel comes back.
+ */
+function scheduleRepaint() {
+  if (repaintPending) return;
+  repaintPending = true;
+  requestAnimationFrame(() => {
+    repaintPending = false;
+    repaint();
+  });
 }
 
 function repaint() {
   if (monitors.size === 0) return;
-  for (const m of monitors.values()) {
-    m.ctx.fillStyle = "#000";
-    m.ctx.fillRect(0, 0, m.canvas.width, m.canvas.height);
-  }
-  colour = "rgba(255,255,255,1)";
+  for (const m of monitors.values()) m.u32.fill(BLACK);
+  colour = WHITE;
   for (const c of lastCommands) {
     if (Array.isArray(c)) draw(c);
   }
+  for (const m of monitors.values()) m.ctx.putImageData(m.img, 0, 0);
 }
 
 monitorTrueColourEl.addEventListener("change", () => {
   trueColour = monitorTrueColourEl.checked;
-  repaint();
+  scheduleRepaint();
 });
 
 /**
  * @param {number} index
- * @returns {CanvasRenderingContext2D | null}
+ * @returns {Monitor | null}
  */
-function ctxFor(index) {
-  const m = monitors.get(Math.round(index));
-  if (!m) return null;
-  m.ctx.fillStyle = colour;
-  m.ctx.strokeStyle = colour;
-  m.ctx.lineWidth = 1;
-  return m.ctx;
+function monitorFor(index) {
+  return monitors.get(Math.round(index)) ?? null;
 }
 
 /** @param {DrawCommand} c */
 function draw(c) {
   const cmd = String(c[0]);
 
-  if (cmd === "COLOUR") { colour = rgba(n(c[1]), n(c[2]), n(c[3]), n(c[4])); return; }
-  if (cmd === "MAPOCEAN") { oceanColour = rgba(n(c[1]), n(c[2]), n(c[3]), n(c[4])); return; }
+  if (cmd === "COLOUR") { colour = makeColour(n(c[1]), n(c[2]), n(c[3]), n(c[4])); return; }
+  if (cmd === "MAPOCEAN") { oceanColour = makeColour(n(c[1]), n(c[2]), n(c[3]), n(c[4])); return; }
   if (cmd === "MAPSHALLOWS" || cmd === "MAPLAND" || cmd === "MAPGRASS" ||
       cmd === "MAPSAND" || cmd === "MAPSNOW") return;   // no terrain data to tint
 
-  const ctx = ctxFor(n(c[1]));
-  if (!ctx) return;
-  const canvas = ctx.canvas;
+  const m = monitorFor(n(c[1]));
+  if (!m) return;
+  const canvas = m.canvas;
 
   switch (cmd) {
     case "CLEAR":
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      fillRect(m, 0, 0, canvas.width, canvas.height);
       return;
 
-    case "MAP": {
+    case "MAP":
       // No terrain data here; a flat ocean fill at least shows the map is live.
-      const prev = ctx.fillStyle;
-      ctx.fillStyle = oceanColour;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = prev;
+      fillRect(m, 0, 0, canvas.width, canvas.height, oceanColour);
       return;
-    }
 
     case "LINE":
-      strokeLine(plotter(ctx), n(c[2]), n(c[3]), n(c[4]), n(c[5]), canvas);
+      strokeLine(plotter(m), n(c[2]), n(c[3]), n(c[4]), n(c[5]), canvas);
       return;
 
     case "CIRCLE": {
       const fill = n(c[2]) === 1;
-      if (fill) fillCircle(runner(ctx), n(c[3]), n(c[4]), n(c[5]), canvas);
-      else strokeCircle(plotter(ctx), n(c[3]), n(c[4]), n(c[5]));
+      if (fill) fillCircle(runner(m), n(c[3]), n(c[4]), n(c[5]), canvas);
+      else strokeCircle(plotter(m), n(c[3]), n(c[4]), n(c[5]));
       return;
     }
 
@@ -515,15 +569,15 @@ function draw(c) {
       const x1 = Math.round(n(c[3]) + n(c[5])), y1 = Math.round(n(c[4]) + n(c[6]));
       const w = x1 - x0, h = y1 - y0;
       if (fill) {
-        ctx.fillRect(x0, y0, w, h);
+        fillRect(m, x0, y0, w, h);
       } else if (w > 0 && h > 0) {
-        // Four 1px runs rather than strokeRect, so the corners aren't drawn
-        // twice (which would double-blend a translucent colour).
-        ctx.fillRect(x0, y0, w, 1);
-        if (h > 1) ctx.fillRect(x0, y1 - 1, w, 1);
+        // Four 1px runs rather than an outline pass, so the corners aren't
+        // drawn twice (which would double-blend a translucent colour).
+        fillRect(m, x0, y0, w, 1);
+        if (h > 1) fillRect(m, x0, y1 - 1, w, 1);
         if (h > 2) {
-          ctx.fillRect(x0, y0 + 1, 1, h - 2);
-          if (w > 1) ctx.fillRect(x1 - 1, y0 + 1, 1, h - 2);
+          fillRect(m, x0, y0 + 1, 1, h - 2);
+          if (w > 1) fillRect(m, x1 - 1, y0 + 1, 1, h - 2);
         }
       }
       return;
@@ -532,19 +586,19 @@ function draw(c) {
     case "TRIANGLE": {
       const fill = n(c[2]) === 1;
       const v = [n(c[3]), n(c[4]), n(c[5]), n(c[6]), n(c[7]), n(c[8])];
-      if (fill) fillTriangle(runner(ctx), v[0], v[1], v[2], v[3], v[4], v[5], canvas);
-      else strokeTriangle(plotter(ctx), v[0], v[1], v[2], v[3], v[4], v[5], canvas);
+      if (fill) fillTriangle(runner(m), v[0], v[1], v[2], v[3], v[4], v[5], canvas);
+      else strokeTriangle(plotter(m), v[0], v[1], v[2], v[3], v[4], v[5], canvas);
       return;
     }
 
     case "TEXT": {
-      drawPixelText(pixelSetter(ctx), String(c[4] ?? ""), Math.round(n(c[2])), Math.round(n(c[3])));
+      drawPixelText(pixelSetter(m), String(c[4] ?? ""), Math.round(n(c[2])), Math.round(n(c[3])));
       return;
     }
 
     case "TEXTBOX": {
       drawTextbox(
-        ctx, n(c[2]), n(c[3]), n(c[4]), n(c[5]),
+        m, n(c[2]), n(c[3]), n(c[4]), n(c[5]),
         n(c[6]), n(c[7]), String(c[8] ?? "")
       );
       return;
@@ -555,51 +609,108 @@ function draw(c) {
   }
 }
 
+// --- Pixel writers ----------------------------------------------------------
+//
+// All four of these take the *current* colour at the moment they are created,
+// not per pixel: a colour can only change between draw commands, so binding it
+// once keeps the inner loops free of module-variable reads. Every one clips —
+// the canvas used to do that for free, but a raw buffer write with a negative
+// x would silently land on the previous row.
+
 /**
- * A de-duplicating pixel plotter for raster.js. The rasterisers can revisit a
- * pixel (the circle's eight-way symmetry meets on the axes, a triangle's edges
- * meet at its corners) and painting one twice would double-blend a translucent
- * colour into a brighter dot. One Set per shape; outlines are O(perimeter), so
- * it stays small.
- * @param {CanvasRenderingContext2D} ctx
+ * Fill an axis-aligned rectangle, clipped to the screen.
+ * @param {Monitor} m
+ * @param {number} x @param {number} y @param {number} w @param {number} h
+ * @param {Colour} [col] defaults to the current draw colour
+ */
+function fillRect(m, x, y, w, h, col = colour) {
+  const width = m.canvas.width, height = m.canvas.height;
+  const x0 = Math.max(0, x), x1 = Math.min(width, x + w);
+  const y0 = Math.max(0, y), y1 = Math.min(height, y + h);
+  if (x1 <= x0 || y1 <= y0 || col.a === 0) return;
+  const u32 = m.u32;
+  if (col.a === 255) {
+    for (let yy = y0; yy < y1; yy++) {
+      const row = yy * width;
+      u32.fill(col.packed, row + x0, row + x1);
+    }
+    return;
+  }
+  for (let yy = y0; yy < y1; yy++) {
+    const row = yy * width;
+    for (let xx = x0; xx < x1; xx++) {
+      u32[row + xx] = blendPixel(u32[row + xx], col.r, col.g, col.b, col.a);
+    }
+  }
+}
+
+/**
+ * A pixel plotter for raster.js. The rasterisers can revisit a pixel (the
+ * circle's eight-way symmetry meets on the axes, a triangle's edges meet at
+ * its corners), which matters only for a translucent colour — painting one
+ * twice would double-blend it into a brighter dot. An opaque store is
+ * idempotent, so that case skips the de-duplication (and its per-shape Set)
+ * entirely: measured 1.7x faster on a mixed frame and 3.5x on an outline-heavy
+ * one. The translucent path keeps a Set per shape; outlines are O(perimeter),
+ * so it stays small. doc/monitor-dedup-plan.md has the measurements and the
+ * plan for replacing that Set with a stamp buffer.
+ * @param {Monitor} m
  * @returns {import("./raster.js").Plot}
  */
-function plotter(ctx) {
-  const canvas = ctx.canvas;
+function plotter(m) {
+  const width = m.canvas.width, height = m.canvas.height;
+  const u32 = m.u32, col = colour;
+  if (col.a === 255) {
+    const packed = col.packed;
+    return (x, y) => {
+      if (x < 0 || y < 0 || x >= width || y >= height) return;
+      u32[y * width + x] = packed;
+    };
+  }
   const seen = new Set();
   return (x, y) => {
-    if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return;
-    const key = y * canvas.width + x;
-    if (seen.has(key)) return;
-    seen.add(key);
-    ctx.fillRect(x, y, 1, 1);
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const i = y * width + x;
+    if (seen.has(i)) return;
+    seen.add(i);
+    u32[i] = blendPixel(u32[i], col.r, col.g, col.b, col.a);
   };
 }
 
 /**
  * Horizontal-run painter for the filled rasterisers. Runs never overlap, so
  * unlike plotter() this needs no de-duplication — just clipping.
- * @param {CanvasRenderingContext2D} ctx
+ * @param {Monitor} m
  * @returns {import("./raster.js").FillRun}
  */
-function runner(ctx) {
-  const canvas = ctx.canvas;
+function runner(m) {
+  const width = m.canvas.width, height = m.canvas.height;
+  const u32 = m.u32, col = colour;
   return (x, y, w) => {
-    if (y < 0 || y >= canvas.height) return;
-    const from = Math.max(0, x);
-    const to = Math.min(canvas.width, x + w);
-    if (to > from) ctx.fillRect(from, y, to - from, 1);
+    if (y < 0 || y >= height) return;
+    const from = Math.max(0, x), to = Math.min(width, x + w);
+    if (to <= from) return;
+    const row = y * width;
+    if (col.a === 255) { u32.fill(col.packed, row + from, row + to); return; }
+    for (let xx = from; xx < to; xx++) {
+      u32[row + xx] = blendPixel(u32[row + xx], col.r, col.g, col.b, col.a);
+    }
   };
 }
 
 /**
- * A pixel-plotting callback bound to one context, for the bitmap font. The
- * fill colour is already set by ctxFor().
- * @param {CanvasRenderingContext2D} ctx
+ * A pixel-plotting callback for the bitmap font.
+ * @param {Monitor} m
  * @returns {(px: number, py: number) => void}
  */
-function pixelSetter(ctx) {
-  return (px, py) => ctx.fillRect(px, py, 1, 1);
+function pixelSetter(m) {
+  const width = m.canvas.width, height = m.canvas.height;
+  const u32 = m.u32, col = colour;
+  return (px, py) => {
+    if (px < 0 || py < 0 || px >= width || py >= height) return;
+    const i = py * width + px;
+    u32[i] = col.a === 255 ? col.packed : blendPixel(u32[i], col.r, col.g, col.b, col.a);
+  };
 }
 
 /**
@@ -607,13 +718,13 @@ function pixelSetter(ctx) {
  * within the box rather than against the screen edges. Alignment is computed
  * from the bitmap font's own metrics (each line measured independently) and
  * rounded to whole pixels so glyphs land on the pixel grid.
- * @param {CanvasRenderingContext2D} ctx
+ * @param {Monitor} m
  * @param {number} x @param {number} y @param {number} w @param {number} h
  * @param {number} hAlign @param {number} vAlign
  * @param {string} text
  */
-function drawTextbox(ctx, x, y, w, h, hAlign, vAlign, text) {
-  const setPixel = pixelSetter(ctx);
+function drawTextbox(m, x, y, w, h, hAlign, vAlign, text) {
+  const setPixel = pixelSetter(m);
   const lines = text.split("\n");
   const blockH = measurePixelBlockHeight(lines.length);
 

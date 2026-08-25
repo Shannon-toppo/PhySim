@@ -10,6 +10,7 @@ import {
 import { targetGroup } from "./scene.js";
 import { syncInputsFromPose } from "./pose.js";
 import { readState, scheduleSend } from "./messaging.js";
+import { resetTrail } from "./visuals.js";
 
 /** @param {string[]} names */
 export function renderPresetList(names) {
@@ -36,6 +37,7 @@ function isTriple(v) {
 /** @param {import("./channels.js").PhysStateLike | undefined} s */
 export function applyPresetState(s) {
   if (!s || !isTriple(s.position) || !isTriple(s.rotation) || !isTriple(s.velocity) || !isTriple(s.angularVelocity)) return;
+  resetTrail();   // loading a preset teleports; the old path would draw a jump
   targetGroup.position.set(s.position[0], s.position[1], s.position[2]);
   targetGroup.rotation.set(s.rotation[0], s.rotation[1], s.rotation[2]);
   numInputs.vx.value = String(s.velocity[0]);

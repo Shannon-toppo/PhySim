@@ -9,6 +9,7 @@
 //   pose.js       — pose inputs ⇄ gizmo sync
 //   messaging.js  — state streaming to the extension host
 //   simulation.js — fixed-timestep integration + recording/playback
+//   visuals.js    — path trail + velocity arrow (maths in trail.js)
 //   presets.js    — preset save/load/delete UI
 //
 // This file only wires the modules together: toolbar mode buttons, reset,
@@ -25,6 +26,7 @@ import { scheduleSend, sendState, requestScreens } from "./messaging.js";
 import { applyScreenConfig, applyScreenFrame } from "./mcScreen.js";
 import { setSimulating, toggleSimulating, step } from "./simulation.js";
 import { renderPresetList, applyPresetState } from "./presets.js";
+import { updateVisuals, resetTrail } from "./visuals.js";
 
 // --- Mode buttons / reset ----------------------------------------------------
 /** @param {string} mode */
@@ -43,6 +45,7 @@ function resetGizmo() {
     numInputs[k].value = "0";
   }
   for (const k of POSE_KEYS) poseInputs[k].value = "0";
+  resetTrail();          // the old path no longer belongs to where we are now
   scheduleSend();
 }
 resetBtn.addEventListener("click", resetGizmo);
@@ -106,6 +109,7 @@ transform.addEventListener("objectChange", () => { syncInputsFromPose(); schedul
 // --- Render loop ----------------------------------------------------------------
 function loop() {
   step();               // simulation or playback, whichever is active
+  updateVisuals();      // trail sample + velocity arrow
   orbit.update();
   updateLabels();
   renderer.render(scene, camera);

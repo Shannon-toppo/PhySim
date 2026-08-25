@@ -34,6 +34,7 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - Lua runs inside **fengari** (Lua 5.3 semantics in pure JS — same major version as lua-debug) via `test/helpers/luaRunner.mjs`, which stubs `_physim_socket` and drives `PhySim._buf` directly. No system Lua install needed.
 - `simulatorLuaPatch.test.mjs` — the `_simulator.lua` surgery: injection order (FS shim before `createSandbox`, socket after), the exe-launch suppression, idempotence, and the "upstream changed the template" cases that must warn instead of guessing.
 - `trail.test.mjs` — `media/trail.js`: the trail buffer keeps the newest points in draw order, drops sub-millimetre samples, survives a capacity change, and the velocity-arrow length stays inside the scene for any speed.
+- `blend.test.mjs` — `media/blend.js`: packed words really are R,G,B,A in memory order (get this backwards and every monitor colour comes out with red and blue swapped), and blending is an exact lerp that doesn't drift over repeated draws.
 - `raster.test.mjs` — `media/raster.js`: exact pixel sets for axis-aligned and 45° lines, circle symmetry, triangle coverage, and the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
 - `simstub.test.mjs` — the shared `frame.ts` framing (prefix encode/decode, split/concat/corrupt-prefix resync) plus `simStubServer.ts`'s protocol handling: `SCREENCONFIG` → `SCREENSIZE`, portrait swap, `TICKEND` buffering/flush, draw-command parsing, and `sendTouch()`'s wire shape.
 
@@ -66,7 +67,8 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
    - `presets.js` — preset save/load/delete UI intents.
    - `visuals.js` — the path trail (a `THREE.Line` with an age-faded vertex colour) and the world-frame velocity arrow, plus the sidebar toggles that own them. Samples per **tick** (called from `simulation.js`'s fixed-timestep loop) as well as per rAF, so a throttled panel still records the path at full resolution.
    - `trail.js` — **trail ring buffer + arrow scaling, pure module** (no DOM/three) so `test/trail.test.mjs` runs it in Node. The buffer shifts rather than wraps: the vertex order must equal the draw order or the line draws a stray segment across the seam.
-   - `mcScreen.js` — microcontroller monitor rendering (always on macOS, opt-in on Windows); draws `SimStubServer`'s forwarded screen config/draw commands to `<canvas>` and relays touch input back. See "Monitor colours" below before touching `rgba()`.
+   - `mcScreen.js` — microcontroller monitor rendering (always on macOS, opt-in on Windows); draws `SimStubServer`'s forwarded screen config/draw commands and relays touch input back. See "Monitor colours" below before touching `makeColour()`, and "Monitor rendering cost" before making it draw through the canvas 2D API again.
+   - `blend.js` — **colour packing + source-over blending, pure module** (no DOM/canvas) so `test/blend.test.mjs` runs it in Node. Owns the endianness probe that decides how RGBA bytes pack into an ImageData word.
    - `pixelFont.js` — the hand-drawn 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush).
    - `raster.js` — **integer-grid line/circle/triangle rasterisers, pure module** (no DOM/canvas — the target is a `plot`/`fillRun` callback) so `test/raster.test.mjs` can run them in Node. Canvas path drawing anti-aliases, which the integer CSS upscale magnifies into a visible haze; Stormworks monitors have no AA. Every rasteriser clips to the screen, so a microcontroller passing ±1e9 coordinates can't hang the panel.
    Coordinate convention is **Stormworks left-handed (X+ East, Y+ Up, Z+ North)** — three.js itself is right-handed, so the camera is positioned to make `+Z` look like "into the screen / north" without any scene-level flipping. The modules are vanilla JS with JSDoc types, checked by `npm run check:media` (strict).
@@ -131,6 +133,28 @@ washed-out result is *correct*; don't "fix" it by changing `rgba()`.
 The correction is applied unclamped (255 leaves as 272.9), so the panel's
 optional **True colour** toggle (`unGamma`, off by default) inverts it
 losslessly back to the original `setColor` values.
+
+## Monitor rendering cost
+
+`mcScreen.js` draws into an `ImageData` through a `Uint32Array` view and
+uploads each monitor with one `putImageData` at the end of the frame. Do not
+"simplify" this back into canvas 2D calls: `ctx.fillRect(x, y, 1, 1)` per
+pixel measured **6-7x slower** on the same frames (a 500-command frame went
+from 0.45 ms to 2.9 ms in an A/B on one page), which is what made the panel
+eat a core during monitor simulation. Everything the rasterisers and the
+bitmap font hand back is a pixel or a run, so the buffer is the natural
+target; the canvas is only the upload surface.
+
+Two consequences to keep in mind:
+
+- The buffer writers clip themselves. The canvas used to do that for free, and
+  a raw write at x = -1 lands on the *previous row* instead of being dropped.
+- Repaints are coalesced into one `requestAnimationFrame` (`scheduleRepaint`).
+  Frames arrive at the simulator's cadence, not the display's, and only the
+  newest matters. This is also what keeps a hidden panel from painting:
+  `retainContextWhenHidden` means the webview still receives every frame
+  message while hidden, but rAF doesn't run, so nothing is drawn until it
+  comes back.
 
 ## Coordinate / sign conventions
 

@@ -85,6 +85,21 @@
     <div class="slider"><label>Y</label><input type="range" id="aay" min="-{{piTenthMax}}" max="{{piTenthMax}}" step="0.0001" value="0" /><input type="number" id="aay-num" step="0.0001" value="0" /><button class="rst" data-reset="aay" title="Reset to 0" tabindex="-1">&#8634;</button></div>
     <div class="slider"><label>Z</label><input type="range" id="aaz" min="-{{piTenthMax}}" max="{{piTenthMax}}" step="0.0001" value="0" /><input type="number" id="aaz-num" step="0.0001" value="0" /><button class="rst" data-reset="aaz" title="Reset to 0" tabindex="-1">&#8634;</button></div>
 
+    <h3>Visualization</h3>
+    <div class="viz-row">
+      <label class="viz-check" title="Draw the path the target has travelled"><input type="checkbox" id="viz-trail" checked /><span>Trail</span></label>
+      <select id="viz-trail-len" title="How much history the trail keeps (one sample per tick)">
+        <option value="120">2s</option>
+        <option value="300" selected>5s</option>
+        <option value="600">10s</option>
+        <option value="1800">30s</option>
+      </select>
+      <button id="viz-trail-clear" title="Clear the recorded path">Clear</button>
+    </div>
+    <div class="viz-row">
+      <label class="viz-check" title="Arrow from the target along the current linear velocity (world frame, CH7-9)"><input type="checkbox" id="viz-vel" checked /><span>Velocity vector</span></label>
+    </div>
+
     <h3>Presets</h3>
     <div class="preset-row">
       <input type="text" id="preset-name" placeholder="preset name" maxlength="64" />

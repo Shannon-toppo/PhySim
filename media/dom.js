@@ -63,6 +63,12 @@ for (const k of POSE_KEYS) poseInputs[k] = mustGetInput(k + "-num");
 export const channelOut = {};
 for (let i = 1; i <= 17; i++) channelOut[i] = mustGet("c" + i);
 
+// Motion visualisation toggles (media/visuals.js owns their behaviour).
+export const vizTrailEl      = /** @type {HTMLInputElement} */ (mustGet("viz-trail"));
+export const vizTrailLenEl   = /** @type {HTMLSelectElement} */ (mustGet("viz-trail-len"));
+export const vizTrailClearBtn = mustGet("viz-trail-clear");
+export const vizVelEl        = /** @type {HTMLInputElement} */ (mustGet("viz-vel"));
+
 // preset UI elements
 export const presetNameEl    = /** @type {HTMLInputElement} */ (mustGet("preset-name"));
 export const presetListEl    = /** @type {HTMLSelectElement} */ (mustGet("preset-list"));

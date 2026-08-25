@@ -110,6 +110,36 @@ TEXT / TEXTBOX の末尾自由テキスト（それ自体が `|` を含みうる
 影響範囲は自前モニターシミュレーションのみで、Windows 既定の `STORMWORKS_Simulator.exe`
 経由の表示、および CH1–17 のチャンネル仕様には影響しない。
 
+## 軌跡トレイルと速度ベクトル（v0.4.5, 2026-08）
+
+README「今後追加予定の機能」3 番目の実装。Simulate で動かしている間、ギズモが今どこを
+通ってきたのか、どちらへどれだけの速さで進んでいるのかが画面から読み取れなかった。
+
+**構成** — 三角関数やバッファ操作のような純粋な部分を `media/trail.js` に、three.js の
+オブジェクトと UI 配線を `media/visuals.js` に分けた。`raster.js` / `channels.js` と同じ
+分け方で、前者は Node からそのまま import してテストできる（`test/trail.test.mjs`）。
+
+**リングバッファにしなかった理由** — Line の頂点順がそのまま描画順になるため、
+書き込み位置を巻き戻す本来のリングバッファだと、継ぎ目をまたぐ 1 本の線が画面を横切る。
+満杯時は `copyWithin(0, 3)` で 1 点ぶん詰める方式にした。最長 1800 点でも 1 フレームに
+数千 float のコピーで、しかも点が実際に増えたティックにしか走らない。
+
+**サンプリングはティック単位** — 当初は rAF ごとに 1 点取っていたが、パネルが非表示だったり
+ホストが重かったりで rAF が間引かれると、シミュレーション自体は壁時計ベースで進むのに
+トレイルだけが粗い折れ線になる（動作確認中に実際に発生した）。`simulation.js` の固定
+タイムステップループから `sampleTrail()` を呼び、GPU への転送は rAF ごとに 1 回だけ行う。
+rAF 側でも 1 点サンプルしているので、ギズモのドラッグや数値入力での移動も拾える。
+
+**その他の判断**
+- 1 mm 未満の移動は捨てる。静止中に同じ点でバッファが埋まると、動き出した時に履歴が無い
+- Reset / プリセット読み込み / 再生の巻き戻しではトレイルを消す。いずれもワープであり、
+  残しておくと実際には通っていない直線が描かれる
+- 矢印は m/tick をそのまま長さにすると 1.0 で 60 m/s ぶんになりグリッド（20 単位）を
+  はみ出すため、ゲイン 4 倍・下限 1・上限 12 単位に丸めた。速度はワールド座標系
+  （CH7-9 と同じ）なので、矢印は `scene` 直下に置き機体の回転には追従させない
+- トレイルは古い側を暗く、新しい側を明るいシアンにする頂点カラー。線幅は 1 px 固定
+  （WebGL の制約。太くするには Line2 が必要で、three の addons を追加で vendor することになる）
+
 ## ファイル構成（最終）
 ```
 PhySim/
@@ -132,6 +162,8 @@ PhySim/
 │   ├── panel.js                  # エントリ（配線のみ）
 │   ├── vscodeApi.js / channels.js / dom.js / scene.js / pose.js
 │   ├── messaging.js / simulation.js / presets.js
+│   ├── visuals.js                # トレイル＋速度矢印（three.js 側）
+│   ├── trail.js                  # トレイルのバッファと矢印長（純粋モジュール）
 │   ├── globals.d.ts              # acquireVsCodeApi 型宣言
 │   └── three/                    # vendored Three.js
 ├── lua/
@@ -140,6 +172,7 @@ PhySim/
 │   ├── helpers/luaRunner.mjs     # fengari ハーネス
 │   ├── protocol.test.mjs / channels.test.mjs / roundtrip.test.mjs
 │   ├── parity.test.mjs           # JS⇄Lua CH13–17 一致検証
+│   ├── trail.test.mjs            # トレイルバッファ／矢印スケール
 │   └── pathUtils.test.mjs
 └── scripts/
     └── copy-three.js             # postinstall で Three.js 配置

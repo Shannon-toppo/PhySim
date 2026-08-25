@@ -221,6 +221,94 @@ rAF は非表示中は発火しないので、描画ごと消える。復帰時�
 チャンネル差 1 以内、α=64 で 3 以内。極端なケース（全描画が α=1 で 40 回以上重なる合成テスト）
 では最大 32 まで開く。どちらも近似で、基準は本来ゲーム側の描画なので追随はしていない。
 
+## チャンネル値の CSV ロギング（v0.4.6, 2026-08）
+
+README「今後追加予定の機能」6 番目の実装。CH1-17 を CSV に書き出して、オフラインで
+グラフ化したり PID の応答を見比べたりできるようにする。
+
+**列の定義を webview 側に置いた** — 列名は `media/csv.js` の `CSV_COLUMNS` が持ち、
+ヘッダー行も webview が「最初の 1 行」として送る。拡張ホスト側の `src/csvLogger.ts` は
+渡された文字列を追記して数えるだけで、チャンネルが何本あるかを知らない。CH を追加しても
+触る場所が 1 箇所で済む。
+
+**行が生まれる場所は 2 つ** — Simulate / Play 中は `simulation.js` の固定タイムステップ
+ループから 1 ティック 1 行（トレイルと同じ理由で、rAF が間引かれてもログは粗くならない）。
+停止中はギズモのドラッグや数値入力で `sendState()` が走るたびに 1 行。
+
+問題は `stepSimulation()` がティックループの**後に** `sendState()` を呼ぶこと。素直に
+両方から書くと、シミュレーション中は毎フレーム末尾に直前のティックと同じ行が重複する。
+`csv.js` の `tickRow` / `sendRow` が `tickLogged` フラグでこれを 1 回だけ食う。この
+受け渡しが今回いちばん壊しやすい部分なので、DOM に依存しない形で `csv.js` に置いて
+`test/csv.test.mjs` から直接叩けるようにした。
+
+**開始はホストとの往復** — 保存先ダイアログはキャンセルできるので、ボタンが点灯するのは
+ホストが `csvState` を返してきてからにした。停止側は拒否されないので即座に落とす
+（返事を待つ間に積んだ行は、ファイルが閉じた後に届いてしまう）。
+
+**その他の判断**
+- 行は 250 ms または 240 行ごとにまとめて `postMessage`。60 Hz で 1 行 1 通は無駄が多い
+- 数値の丸めは `physServer.ts:fmt()` と同じ小数 6 桁。CSV の CH1-12 が実際にワイヤへ
+  出た値と一致するので、ログとマイコンの挙動を突き合わせられる
+- 改行は CRLF（RFC 4180）。webview から来た行に含まれる改行は空白へ潰す。レンダラ由来の
+  文字列をそのまま流すと、1 行が 2 レコードに割れて以降の列が全部ずれる
+- サンプル間隔が一定でないので `time_s` 列を持たせた。時間軸にはこちらを使う
+
+## CSV 保存先ダイアログが Windows で開かない（v0.4.6, 2026-08）
+
+macOS では動作したが、Windows で「⬇ CSV Log」を押してもダイアログが出ず、以降何も
+起きないとの報告。
+
+**原因** — 保存先ダイアログの初期パス。ワークスペースフォルダが開かれていない場合、
+`vscode.Uri.file(defaultLogFileName())` とファイル名だけから URI を作っていた。macOS では
+`/physim-log-….csv` という一応妥当な絶対パスに解決されてダイアログが開くが、Windows では
+`\physim-log-….csv` というドライブ相対パスになり、ネイティブダイアログが開けない。
+同じコードが片方の OS でだけ通る典型で、パス解決の差がそのまま出た。
+
+**症状が「無反応」になった理由** — 例外が `async` な `onDidReceiveMessage` ハンドラの中で
+起きるため、VSCode に握り潰されて通知もログも出ない。さらに webview 側は `csvState` の
+返事が来るまでボタンを disabled にしていたので、押した瞬間にグレーアウトしたまま二度と
+戻らない。エラーも出ず操作もできない、いちばん困る壊れ方だった。
+
+**修正**
+- 初期パスの決定を `csvLogger.ts:defaultLogPath()` に切り出し、フォルダ未オープン時は
+  ホームディレクトリへフォールバックさせて必ず絶対パスにした。`vscode` 非依存なので
+  `test/csvLogger.test.mjs` から Windows 形状も含めて検証できる
+- `startCsvLog()` 全体を try/catch で囲み、どの経路を通っても必ず `csvState` を返す。
+  ダイアログの表示・却下・失敗をすべて `log()` に残す
+- webview のボタンは待機中「… Choose a file」と表示し、120 秒で自動復帰する。ネイティブ
+  ダイアログは他ウィンドウの背後に回ることがあり（Windows では LifeBoatAPI のシミュレータ
+  exe が別ウィンドウで前に出る）、無言のグレーアウトは機能が死んだようにしか見えない
+- ホスト側にもダイアログ多重表示のガードを入れた
+
+### 続報：真因は out/ の作り忘れだった（2026-08-26）
+
+上の修正を入れても Windows では同じ症状のまま。改めて実機を調べたところ、原因は
+**拡張ホストのビルドが古かった**こと。`out/` の最終更新は 0.4.4 を vsce package した
+時点（8/22）で止まっており、`out/csvLogger.js` は存在せず `out/physSimPanel.js` には
+`csv` の文字すら無かった。CSV ロギングを実装したのは 8/26 の macOS 側なので、Windows で
+動くはずがなかった。
+
+**なぜ「片方の OS だけ」に見えたか** — `media/` は webview がディスクから毎回読むので
+パネルには CSV ボタンが出る。`out/` はコンパイル成果物なので古いまま。つまり
+「ボタンはある／ホストには `csvStart` のハンドラが無い」というちぐはぐな状態になり、
+押すとメッセージは無視され、返事が来ないので webview は 120 秒グレーのまま。
+macOS 側は実装直後にビルドしていたので普通に動いた。**OS 差ではなくビルド差**だった。
+
+`.vscode/launch.json` の `preLaunchTask` が `npm: compile`（ワンショット）だったのも
+効いている。F5 のときしか走らないので、他 OS の作業を pull したあと開発ホストを
+Reload Window しただけでは `out/` が更新されない。
+
+**対策**
+- `preLaunchTask` を `npm: watch` に変更。開発ホストの reload でも常に最新の `out/` を読む
+- `csvStart` に **ack を追加**。ホストは `showSaveDialog` を出す直前に `csvDialog` を
+  返し、webview は 3 秒以内に ack が来なければ「no response」をツールバーに赤字で出して
+  ボタンを戻す（ツールチップに「ホストのビルドが古い可能性」を明記）。
+  「ダイアログが他ウィンドウの背後にいる」と「ホストがそもそも知らない」を
+  区別できなかったことが、この誤診の直接の原因だった
+
+なお前段の `defaultLogPath()` 修正自体は無駄ではない（フォルダ未オープン時に
+ドライブ相対パスになるのは実際に不正）が、今回の症状の原因ではなかった。
+
 ## ファイル構成（最終）
 ```
 PhySim/
@@ -236,6 +324,7 @@ PhySim/
 │   ├── physSimPanel.ts           # WebView 管理（media/panel.html を読み込んで {{token}} 置換）
 │   ├── libraryPathInjector.ts    # 設定注入（補完用）
 │   ├── debugConfigPatcher.ts     # _simulator.lua patch + config.arg 注入
+│   ├── csvLogger.ts              # CSV ファイルの開閉と追記（vscode 非依存）
 │   └── pathUtils.ts              # normalize() 共有ユーティリティ
 ├── media/
 │   ├── panel.html                # WebView マークアップの正（テンプレート）
@@ -245,6 +334,8 @@ PhySim/
 │   ├── messaging.js / simulation.js / presets.js
 │   ├── visuals.js                # トレイル＋速度矢印（three.js 側）
 │   ├── trail.js                  # トレイルのバッファと矢印長（純粋モジュール）
+│   ├── logging.js                # CSV ロギングの UI とバッチ送信
+│   ├── csv.js                    # CSV の列定義・行整形・採番（純粋モジュール）
 │   ├── blend.js                  # 色のパックと合成（純粋モジュール）
 │   ├── globals.d.ts              # acquireVsCodeApi 型宣言
 │   └── three/                    # vendored Three.js
@@ -255,6 +346,8 @@ PhySim/
 │   ├── protocol.test.mjs / channels.test.mjs / roundtrip.test.mjs
 │   ├── parity.test.mjs           # JS⇄Lua CH13–17 一致検証
 │   ├── trail.test.mjs            # トレイルバッファ／矢印スケール
+│   ├── csv.test.mjs              # CSV の列幅・golden 行・重複排除
+│   ├── csvLogger.test.mjs        # ファイル書き出しと行のサニタイズ
 │   ├── blend.test.mjs            # 色パックのバイト順／合成
 │   └── pathUtils.test.mjs
 └── scripts/

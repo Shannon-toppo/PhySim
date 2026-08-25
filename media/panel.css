@@ -67,6 +67,13 @@ body {
   font-family: var(--vscode-editor-font-family, monospace);
 }
 
+/* The CSV counter doubles as an error line when the host never answers. */
+#toolbar .rec-count.warn {
+  opacity: 1;
+  color: var(--vscode-errorForeground, #f14c4c);
+  cursor: help;
+}
+
 #toolbar .hint {
   margin-left: 12px;
   opacity: 0.7;

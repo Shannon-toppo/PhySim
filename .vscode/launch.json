@@ -9,7 +9,12 @@
         "--extensionDevelopmentPath=${workspaceFolder}"
       ],
       "outFiles": ["${workspaceFolder}/out/**/*.js"],
-      "preLaunchTask": "npm: compile"
+      // watch, not compile: a one-shot build only runs on F5, so a Reload
+      // Window in the dev host (or pulling work done on the other OS) leaves
+      // the host running whatever out/ happened to hold while media/ — read
+      // from disk every load — moves on. That split is what made CSV logging
+      // look Windows-only: the panel had the button, the host had no handler.
+      "preLaunchTask": "npm: watch"
     }
   ]
 }

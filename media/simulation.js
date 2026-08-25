@@ -18,6 +18,7 @@ import { targetGroup } from "./scene.js";
 import { syncInputsFromPose } from "./pose.js";
 import { readState, sendState } from "./messaging.js";
 import { resetTrail, sampleTrail } from "./visuals.js";
+import { isLogging, logTick } from "./logging.js";
 
 const TICK_DT_MS = 1000 / 60;
 const MAX_CATCHUP_MS = 250;          // clamp after a stall so we don't fast-forward
@@ -68,7 +69,12 @@ function integrateOneTick() {
   targetGroup.rotation.z = normalizeAngle(targetGroup.rotation.z + az);
 
   sampleTrail();   // per tick, so a throttled rAF can't coarsen the trail
-  if (recording) recordBuffer.push(readState());
+  // Both consumers want the post-integration state; read it once.
+  if (recording || isLogging()) {
+    const s = readState();
+    if (recording) recordBuffer.push(s);
+    logTick(s);
+  }
 }
 
 function stepSimulation() {
@@ -157,6 +163,7 @@ function stepPlayback() {
     if (playIndex >= recordBuffer.length) { setPlaying(false); break; }
     applyFrame(recordBuffer[playIndex]);
     sampleTrail();
+    logTick(recordBuffer[playIndex]);   // replaying writes rows too
     playIndex++;
     advanced = true;
   }

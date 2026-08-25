@@ -17,6 +17,9 @@ automatically opens a panel containing:
 - a **trail and velocity arrow** — the path of the last N ticks drawn in the 3D
   scene plus an arrow along the current linear velocity, toggled from the
   sidebar's *Visualization* section (trail length 2 / 5 / 10 / 30 seconds)
+- **CSV logging** — the toolbar's *⬇ CSV Log* button streams CH1–17 to a file
+  you pick: one row per tick while simulating, plus a row every time you move
+  the gizmo while paused
 - a live readout of all 17 channels
 
 The values are streamed over a local TCP socket to a small Lua helper
@@ -163,6 +166,28 @@ starting at `startCh` (default `1`):
 "Rotation" unit: 1.0 = one full revolution (2π rad). Tilt ranges [-0.25, +0.25]
 (±90° from horizontal). Compass wraps at ±0.5.
 
+## CSV logging
+
+The toolbar's **⬇ CSV Log** button asks where to save and starts recording as
+soon as you pick a file; pressing it again stops and offers to **Open** the
+result. The row count sits next to the button while it runs.
+
+Rows are written from two places: one per tick (1/60 s) while **Simulate** or
+**Play** is running, and one every time you change the sensor values by hand
+— a gizmo drag, a typed pose — while it is not. The sample interval is
+therefore not constant; use the `time_s` column as the time axis.
+
+The file has 19 columns, `sample,time_s,ch1_pos_x,…,ch17_compass`:
+
+| Column       | Meaning                                                       |
+|--------------|---------------------------------------------------------------|
+| `sample`     | row index within the log, from 0                              |
+| `time_s`     | seconds since logging started                                 |
+| `ch1`–`ch17` | channel values, same units and rounding (6 dp) as the table above |
+
+Records are CRLF-terminated and the numbers are formatted exactly as they go
+out to Lua, so the file drops straight into Excel, pandas or gnuplot.
+
 ## Build and Use
 
 1. Install [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi).
@@ -259,5 +284,6 @@ The following are under consideration. None are implemented yet — listed order
 5. **Gamepad input**
    Drive the gizmo with an attached gamepad / joystick. More fluid than mouse dragging for dynamic scenarios.
 
-6. **CSV logging of channel values**
-   Stream CH1–17 values to a CSV file for offline analysis or graph plotting.
+6. ~~**CSV logging of channel values**~~
+
+   ~~Stream CH1–17 values to a CSV file for offline analysis or graph plotting.~~ → Implemented in v0.4.6

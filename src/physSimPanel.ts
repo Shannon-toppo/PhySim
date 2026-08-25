@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import { PhysServer, PhysState, ZERO_STATE } from "./physServer";
 import { SimStubServer } from "./simStubServer";
+import { CsvLogger, defaultLogFileName } from "./csvLogger";
+import { log } from "./log";
 
 type Triple = [number, number, number];
 
@@ -29,9 +31,13 @@ interface TouchMsg {
 }
 /** Webview asking for a repaint of the monitors it may have missed. */
 interface ScreenRequestMsg { type: "screenRequest"; }
+/** CSV logging: start asks for a file, rows carry pre-formatted lines. */
+interface CsvStartMsg { type: "csvStart"; }
+interface CsvRowsMsg { type: "csvRows"; rows: unknown; }
+interface CsvStopMsg { type: "csvStop"; samples?: unknown; }
 type FromWebview =
   StateMsg | PresetSaveMsg | PresetLoadMsg | PresetDeleteMsg | PresetListRequestMsg
-  | TouchMsg | ScreenRequestMsg;
+  | TouchMsg | ScreenRequestMsg | CsvStartMsg | CsvRowsMsg | CsvStopMsg;
 
 type PresetMap = { [name: string]: PhysState };
 const PRESETS_KEY = "physim.presets";
@@ -64,6 +70,7 @@ export class PhysSimPanelManager {
   private panel: vscode.WebviewPanel | null = null;
   private panelLocation: OpenLocation | null = null;
   private disposables: vscode.Disposable[] = [];
+  private csv = new CsvLogger();
 
   constructor(
     private ctx: vscode.ExtensionContext,
@@ -81,6 +88,13 @@ export class PhysSimPanelManager {
         if (this.panel) this.panel.webview.postMessage({ type: "screenFrame", commands });
       };
     }
+    // A log file that dies mid-session can't be recovered; tell the user and
+    // put the webview's button back where it belongs.
+    this.csv.onError = err => {
+      vscode.window.showErrorMessage(`PhySim: CSV log write failed: ${err.message}`);
+      log(`CSV log write failed: ${err.message}`);
+      this.postCsvState(false);
+    };
   }
 
   /** Repaint monitors in a freshly opened panel from the stub's current state. */
@@ -187,6 +201,18 @@ export class PhysSimPanelManager {
           );
           return;
         }
+        if (msg.type === "csvStart") {
+          await this.startCsvLog();
+          return;
+        }
+        if (msg.type === "csvRows") {
+          this.csv.write(msg.rows);
+          return;
+        }
+        if (msg.type === "csvStop") {
+          await this.stopCsvLog(true);
+          return;
+        }
         if (msg.type === "presetSave") {
           const name = typeof msg.name === "string" ? msg.name.trim().slice(0, MAX_PRESET_NAME_LEN) : "";
           const state = sanitizePresetState(msg.state);
@@ -223,6 +249,10 @@ export class PhysSimPanelManager {
         this.panelLocation = null;
         this.disposables = [];
       }
+      // The panel was the only thing feeding the log; finish the file rather
+      // than leaving a half-written one behind. After the clear above, so the
+      // csvState it posts can't land on a disposed webview.
+      this.stopCsvLog(false);
       // zero out the state on disconnect so the Lua side doesn't keep stale values
       this.server.broadcast(ZERO_STATE);
     });
@@ -234,6 +264,66 @@ export class PhysSimPanelManager {
 
   close(): void {
     if (this.panel) this.panel.dispose();
+  }
+
+  /**
+   * Ask for a destination and open the log. The webview's button only lights
+   * up on the csvState we post back, so cancelling the dialog simply leaves
+   * logging off.
+   */
+  private async startCsvLog(): Promise<void> {
+    if (this.csv.isLogging()) { this.postCsvState(true); return; }
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
+    const defaultUri = folder
+      ? vscode.Uri.joinPath(folder, defaultLogFileName())
+      : vscode.Uri.file(defaultLogFileName());
+    const target = await vscode.window.showSaveDialog({
+      defaultUri,
+      filters: { "CSV": ["csv"] },
+      saveLabel: "Start logging",
+      title: "PhySim: log channel values to"
+    });
+    if (!target) { this.postCsvState(false); return; }
+    try {
+      this.csv.start(target.fsPath);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`PhySim: could not open CSV log: ${message}`);
+      log(`CSV log open failed for ${target.fsPath}: ${message}`);
+      this.postCsvState(false);
+      return;
+    }
+    log(`CSV log started: ${this.csv.getPath()}`);
+    this.postCsvState(true);
+  }
+
+  /**
+   * Close the log. `announce` is false when the panel is going away — the
+   * notification would arrive with nothing left to click back to.
+   */
+  private async stopCsvLog(announce: boolean): Promise<void> {
+    const wasLogging = this.csv.isLogging();
+    const result = await this.csv.stop();
+    this.postCsvState(false);
+    if (!wasLogging || !result) return;
+    log(`CSV log stopped: ${result.path} (${result.lines} lines)`);
+    if (!announce) return;
+    // lines includes the header row; report the data rows the user recorded.
+    const rows = Math.max(0, result.lines - 1);
+    const open = "Open";
+    const choice = await vscode.window.showInformationMessage(
+      `PhySim: logged ${rows} rows to ${result.path}`, open
+    );
+    if (choice === open) {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(result.path));
+      await vscode.window.showTextDocument(doc, { preview: false });
+    }
+  }
+
+  private postCsvState(logging: boolean): void {
+    if (this.panel) {
+      this.panel.webview.postMessage({ type: "csvState", logging, path: this.csv.getPath() });
+    }
   }
 
   private getPresets(): PresetMap {

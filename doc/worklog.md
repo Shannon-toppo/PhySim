@@ -221,6 +221,38 @@ rAF は非表示中は発火しないので、描画ごと消える。復帰時�
 チャンネル差 1 以内、α=64 で 3 以内。極端なケース（全描画が α=1 で 40 回以上重なる合成テスト）
 では最大 32 まで開く。どちらも近似で、基準は本来ゲーム側の描画なので追随はしていない。
 
+## チャンネル値の CSV ロギング（v0.4.6, 2026-08）
+
+README「今後追加予定の機能」6 番目の実装。CH1-17 を CSV に書き出して、オフラインで
+グラフ化したり PID の応答を見比べたりできるようにする。
+
+**列の定義を webview 側に置いた** — 列名は `media/csv.js` の `CSV_COLUMNS` が持ち、
+ヘッダー行も webview が「最初の 1 行」として送る。拡張ホスト側の `src/csvLogger.ts` は
+渡された文字列を追記して数えるだけで、チャンネルが何本あるかを知らない。CH を追加しても
+触る場所が 1 箇所で済む。
+
+**行が生まれる場所は 2 つ** — Simulate / Play 中は `simulation.js` の固定タイムステップ
+ループから 1 ティック 1 行（トレイルと同じ理由で、rAF が間引かれてもログは粗くならない）。
+停止中はギズモのドラッグや数値入力で `sendState()` が走るたびに 1 行。
+
+問題は `stepSimulation()` がティックループの**後に** `sendState()` を呼ぶこと。素直に
+両方から書くと、シミュレーション中は毎フレーム末尾に直前のティックと同じ行が重複する。
+`csv.js` の `tickRow` / `sendRow` が `tickLogged` フラグでこれを 1 回だけ食う。この
+受け渡しが今回いちばん壊しやすい部分なので、DOM に依存しない形で `csv.js` に置いて
+`test/csv.test.mjs` から直接叩けるようにした。
+
+**開始はホストとの往復** — 保存先ダイアログはキャンセルできるので、ボタンが点灯するのは
+ホストが `csvState` を返してきてからにした。停止側は拒否されないので即座に落とす
+（返事を待つ間に積んだ行は、ファイルが閉じた後に届いてしまう）。
+
+**その他の判断**
+- 行は 250 ms または 240 行ごとにまとめて `postMessage`。60 Hz で 1 行 1 通は無駄が多い
+- 数値の丸めは `physServer.ts:fmt()` と同じ小数 6 桁。CSV の CH1-12 が実際にワイヤへ
+  出た値と一致するので、ログとマイコンの挙動を突き合わせられる
+- 改行は CRLF（RFC 4180）。webview から来た行に含まれる改行は空白へ潰す。レンダラ由来の
+  文字列をそのまま流すと、1 行が 2 レコードに割れて以降の列が全部ずれる
+- サンプル間隔が一定でないので `time_s` 列を持たせた。時間軸にはこちらを使う
+
 ## ファイル構成（最終）
 ```
 PhySim/
@@ -236,6 +268,7 @@ PhySim/
 │   ├── physSimPanel.ts           # WebView 管理（media/panel.html を読み込んで {{token}} 置換）
 │   ├── libraryPathInjector.ts    # 設定注入（補完用）
 │   ├── debugConfigPatcher.ts     # _simulator.lua patch + config.arg 注入
+│   ├── csvLogger.ts              # CSV ファイルの開閉と追記（vscode 非依存）
 │   └── pathUtils.ts              # normalize() 共有ユーティリティ
 ├── media/
 │   ├── panel.html                # WebView マークアップの正（テンプレート）
@@ -245,6 +278,8 @@ PhySim/
 │   ├── messaging.js / simulation.js / presets.js
 │   ├── visuals.js                # トレイル＋速度矢印（three.js 側）
 │   ├── trail.js                  # トレイルのバッファと矢印長（純粋モジュール）
+│   ├── logging.js                # CSV ロギングの UI とバッチ送信
+│   ├── csv.js                    # CSV の列定義・行整形・採番（純粋モジュール）
 │   ├── blend.js                  # 色のパックと合成（純粋モジュール）
 │   ├── globals.d.ts              # acquireVsCodeApi 型宣言
 │   └── three/                    # vendored Three.js
@@ -255,6 +290,8 @@ PhySim/
 │   ├── protocol.test.mjs / channels.test.mjs / roundtrip.test.mjs
 │   ├── parity.test.mjs           # JS⇄Lua CH13–17 一致検証
 │   ├── trail.test.mjs            # トレイルバッファ／矢印スケール
+│   ├── csv.test.mjs              # CSV の列幅・golden 行・重複排除
+│   ├── csvLogger.test.mjs        # ファイル書き出しと行のサニタイズ
 │   ├── blend.test.mjs            # 色パックのバイト順／合成
 │   └── pathUtils.test.mjs
 └── scripts/

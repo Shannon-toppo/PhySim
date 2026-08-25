@@ -11,6 +11,7 @@
 //   simulation.js — fixed-timestep integration + recording/playback
 //   visuals.js    — path trail + velocity arrow (maths in trail.js)
 //   presets.js    — preset save/load/delete UI
+//   logging.js    — CSV channel logging (rows formatted by csv.js)
 //
 // This file only wires the modules together: toolbar mode buttons, reset,
 // keyboard shortcuts, extension→webview messages, input events, and the
@@ -27,6 +28,7 @@ import { applyScreenConfig, applyScreenFrame } from "./mcScreen.js";
 import { setSimulating, toggleSimulating, step } from "./simulation.js";
 import { renderPresetList, applyPresetState } from "./presets.js";
 import { updateVisuals, resetTrail } from "./visuals.js";
+import { applyCsvState } from "./logging.js";
 
 // --- Mode buttons / reset ----------------------------------------------------
 /** @param {string} mode */
@@ -67,6 +69,7 @@ window.addEventListener("message", e => {
   else if (msg.type === "setMode") setMode(msg.mode);
   else if (msg.type === "presetList") renderPresetList(Array.isArray(msg.names) ? msg.names : []);
   else if (msg.type === "presetLoaded") applyPresetState(msg.state);
+  else if (msg.type === "csvState") applyCsvState(msg);
   // macOS monitor stand-in — never sent on Windows.
   else if (msg.type === "screenConfig") applyScreenConfig(Array.isArray(msg.screens) ? msg.screens : []);
   else if (msg.type === "screenFrame") applyScreenFrame(Array.isArray(msg.commands) ? msg.commands : []);

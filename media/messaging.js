@@ -5,6 +5,7 @@
 import { vscode } from "./vscodeApi.js";
 import { normalizeAngle } from "./channels.js";
 import { readNum, refreshChannelTable } from "./dom.js";
+import { logSend } from "./logging.js";
 import { targetGroup } from "./scene.js";
 
 let pending = false;
@@ -37,6 +38,7 @@ export function readState() {
 export function sendState() {
   const s = readState();
   refreshChannelTable(s);
+  logSend(s);   // no-op unless CSV logging is on; skips the row a tick already wrote
   vscode.postMessage({ type: "state", ...s });
 }
 

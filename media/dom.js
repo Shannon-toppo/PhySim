@@ -31,6 +31,11 @@ export const recBtn = mustGet("record");
 export const playBtn = /** @type {HTMLButtonElement} */ (mustGet("play"));
 export const recCountEl = mustGet("rec-count");
 
+// CSV channel logging (media/logging.js owns the behaviour; the file is
+// written on the extension side).
+export const csvBtn = /** @type {HTMLButtonElement} */ (mustGet("csv-log"));
+export const csvCountEl = mustGet("csv-count");
+
 // Monitor stand-in for LifeBoatAPI's Windows-only simulator exe (macOS).
 // Starts hidden; mcScreen.js unhides it once a screenConfig arrives.
 export const monitorsSection = mustGet("monitors");

@@ -11,14 +11,18 @@
 // which is what captures gizmo drags and typed poses. The sample counter and
 // the tick/send de-duplication live in csv.js so the tests can drive them.
 //
-// Starting is a round trip: the host may put a save dialog in front of the
-// user and they may cancel it, so the button only lights up once the host
-// answers with a csvState message. While waiting, the button says so rather
-// than just greying out — the dialog is native and can end up behind another
-// window (on Windows the LifeBoatAPI simulator exe is a separate top-level
-// window), and a silent grey button looks exactly like a dead feature. A
-// watchdog re-enables it so a reply that never comes can't wedge the panel;
-// the host ignores a second csvStart while its dialog is up.
+// Starting is a two-step round trip. csvStart asks the host for a file; the
+// host acks with csvDialog the moment the native save dialog goes up, and
+// answers with csvState once the user has picked a path or cancelled.
+//
+// The ack is what separates "the dialog is open, possibly behind another
+// window" from "this extension host has never heard of csvStart" — the second
+// is what a stale out/ looks like from in here, and with no ack it greyed the
+// button out for two minutes with no error anywhere in the panel, the log, or
+// the notifications. So: no ack within ACK_TIMEOUT_MS and we say so; after the
+// ack we wait as long as the dialog needs, with a watchdog so a reply that
+// never comes can't wedge the panel. The host ignores a second csvStart while
+// its dialog is up.
 
 import { vscode } from "./vscodeApi.js";
 import { CSV_HEADER, createLog, tickRow, sendRow } from "./csv.js";
@@ -29,6 +33,13 @@ import { csvBtn, csvCountEl } from "./dom.js";
 const FLUSH_MS = 250;
 const MAX_PENDING = 240;      // ~4 s of ticks — flush early rather than grow
 const START_TIMEOUT_MS = 120000;   // a save dialog can legitimately sit open
+const ACK_TIMEOUT_MS = 3000;       // the host's "dialog is up" is a local round trip
+/** Toolbar text when csvStart goes unanswered — almost always an old host. */
+const NO_HOST_NOTICE = "no response";
+const NO_HOST_HELP =
+  "The extension host did not answer the CSV request. It is most likely running "
+  + "an older build than this panel (media/ is read from disk, out/ is not) — "
+  + "run npm run compile and restart the extension host, or reinstall the .vsix.";
 
 let logging = false;
 let pendingStart = false;     // waiting for the host's answer to csvStart
@@ -39,6 +50,10 @@ let pending = [];
 let flushTimer = 0;
 /** @type {number} */
 let startWatchdog = 0;
+/** @type {number} */
+let startAck = 0;
+/** Shown in place of the row count when something went wrong. */
+let notice = "";
 
 export function isLogging() { return logging; }
 
@@ -53,12 +68,15 @@ function updateButton() {
   csvBtn.disabled = pendingStart;
 }
 
-function clearStartWatchdog() {
+function clearStartTimers() {
   if (startWatchdog) { clearTimeout(startWatchdog); startWatchdog = 0; }
+  if (startAck) { clearTimeout(startAck); startAck = 0; }
 }
 
 function updateCount() {
-  csvCountEl.textContent = logging ? `${log.sample} rows` : "";
+  csvCountEl.textContent = logging ? `${log.sample} rows` : notice;
+  csvCountEl.title = !logging && notice ? NO_HOST_HELP : "";
+  csvCountEl.classList.toggle("warn", !logging && notice !== "");
 }
 
 function flush() {
@@ -97,6 +115,17 @@ export function logSend(s) {
 }
 
 /**
+ * Host → webview: the save dialog is on screen. Nothing to do but stop the
+ * countdown — from here the wait belongs to the user, however long they take.
+ */
+export function applyCsvDialog() {
+  if (!pendingStart) return;
+  if (startAck) { clearTimeout(startAck); startAck = 0; }
+  notice = "";
+  updateCount();
+}
+
+/**
  * Host → webview: the authoritative logging state. Sent in reply to csvStart
  * (false if the user cancelled the save dialog or the file could not be
  * opened) and to csvStop.
@@ -105,7 +134,8 @@ export function logSend(s) {
 export function applyCsvState(msg) {
   const on = msg.logging === true;
   pendingStart = false;
-  clearStartWatchdog();
+  notice = "";
+  clearStartTimers();
   if (on && !logging) {
     log = createLog(performance.now());
     pending = [];
@@ -132,11 +162,24 @@ csvBtn.addEventListener("click", () => {
   } else {
     if (pendingStart) return;
     pendingStart = true;
+    notice = "";
     updateButton();
+    updateCount();
     vscode.postMessage({ type: "csvStart" });
-    // If the host never answers, give the button back instead of leaving the
-    // panel with a permanently dead control.
-    clearStartWatchdog();
+    clearStartTimers();
+    // No csvDialog ack means the host isn't handling csvStart at all. Say so
+    // in the toolbar: silence here is what made a stale build look like a
+    // broken button rather than an out-of-date extension.
+    startAck = setTimeout(() => {
+      startAck = 0;
+      if (!pendingStart) return;
+      pendingStart = false;
+      notice = NO_HOST_NOTICE;
+      updateButton();
+      updateCount();
+    }, ACK_TIMEOUT_MS);
+    // The dialog did open, but no answer ever came. Give the button back
+    // instead of leaving the panel with a permanently dead control.
     startWatchdog = setTimeout(() => {
       startWatchdog = 0;
       if (!pendingStart) return;

@@ -28,7 +28,7 @@ import { applyScreenConfig, applyScreenFrame } from "./mcScreen.js";
 import { setSimulating, toggleSimulating, step } from "./simulation.js";
 import { renderPresetList, applyPresetState } from "./presets.js";
 import { updateVisuals, resetTrail } from "./visuals.js";
-import { applyCsvState } from "./logging.js";
+import { applyCsvState, applyCsvDialog } from "./logging.js";
 
 // --- Mode buttons / reset ----------------------------------------------------
 /** @param {string} mode */
@@ -70,6 +70,7 @@ window.addEventListener("message", e => {
   else if (msg.type === "presetList") renderPresetList(Array.isArray(msg.names) ? msg.names : []);
   else if (msg.type === "presetLoaded") applyPresetState(msg.state);
   else if (msg.type === "csvState") applyCsvState(msg);
+  else if (msg.type === "csvDialog") applyCsvDialog();
   // macOS monitor stand-in — never sent on Windows.
   else if (msg.type === "screenConfig") applyScreenConfig(Array.isArray(msg.screens) ? msg.screens : []);
   else if (msg.type === "screenFrame") applyScreenFrame(Array.isArray(msg.commands) ? msg.commands : []);

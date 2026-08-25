@@ -298,6 +298,11 @@ export class PhysSimPanelManager {
     try {
       const defaultUri = this.defaultCsvUri();
       log(`CSV log: opening the save dialog at ${defaultUri.fsPath}`);
+      // Ack before the dialog blocks us. The panel cannot otherwise tell a
+      // dialog waiting behind another window from an extension host that has
+      // never heard of csvStart — which is exactly what a stale out/ is, and
+      // what made this look like a dead button on Windows.
+      if (this.panel) this.panel.webview.postMessage({ type: "csvDialog" });
       const target = await vscode.window.showSaveDialog({
         defaultUri,
         filters: { "CSV": ["csv"] },

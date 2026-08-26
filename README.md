@@ -6,7 +6,9 @@
 3Dギズモウィンドウから仮想 `physics sensor` を操作できるため、ゲームを起動せずに
 PIDコントローラー・INS・オートパイロットなどのロジックをテストできます。
 
-**F6** を押してLifeBoatAPIシミュレーターを起動すると、この拡張機能が自動的にパネルを開きます:
+![PhySimの使用例](Animation.gif)
+
+**F6** を押してLifeBoatAPIシミュレーターを起動すると、この拡張機能が自動的にパネルを開きます。
 
 - 平行移動・回転ギズモ付き3Dビューポート（右マウスドラッグで視点回転）
 - 線形・角速度、および線形・角加速度のスライダー
@@ -25,7 +27,7 @@ PIDコントローラー・INS・オートパイロットなどのロジック�
 - 標準の `input.getNumber(N)` テーブルへの注入
 - `phys:position()`・`phys:rotation()` などによる直接クエリ
 
-![PhySimの使用例](Animation.gif)
+
 
 ## クイックスタート
 1. [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi) をインストールします。

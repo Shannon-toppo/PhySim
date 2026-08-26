@@ -7,6 +7,8 @@ lets you drive a virtual `physics sensor` from a 3D gizmo window — so you can
 test PID controllers, INS, autopilot logic etc. without having to launch the
 game.
 
+![PhySim in action](../Animation.gif)
+
 When you press **F6** to start the LifeBoatAPI simulator, this extension
 automatically opens a panel containing:
 
@@ -28,7 +30,7 @@ The values are streamed over a local TCP socket to a small Lua helper
 - inject them into the standard `input.getNumber(N)` table, or
 - be queried directly via `phys:position()`, `phys:rotation()` etc.
 
-![PhySim in action](../Animation.gif)
+
 
 ## QuickStart
 1. Install [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi).

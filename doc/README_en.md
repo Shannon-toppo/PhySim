@@ -28,6 +28,8 @@ The values are streamed over a local TCP socket to a small Lua helper
 - inject them into the standard `input.getNumber(N)` table, or
 - be queried directly via `phys:position()`, `phys:rotation()` etc.
 
+![PhySim in action](../Animation.gif)
+
 ## QuickStart
 1. Install [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi).
 2. Download the `.vsix` file from the [Release](https://github.com/Shannon-toppo/PhySim/releases) page and drag and drop it into VS Code.

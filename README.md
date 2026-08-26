@@ -25,6 +25,8 @@ PIDコントローラー・INS・オートパイロットなどのロジック�
 - 標準の `input.getNumber(N)` テーブルへの注入
 - `phys:position()`・`phys:rotation()` などによる直接クエリ
 
+![PhySimの使用例](Animation.gif)
+
 ## クイックスタート
 1. [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi) をインストールします。
 2. [Release](https://github.com/Shannon-toppo/PhySim/releases)から.vsixファイルをダウンロードし、VScodeにドラッグアンドドロップ。

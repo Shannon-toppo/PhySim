@@ -12,10 +12,14 @@ html, body {
 body {
   display: grid;
   grid-template-columns: 1fr 240px;
-  grid-template-rows: 36px 1fr auto;
+  /* The monitor row is content-sized until the splitter is dragged, which sets
+     --monitors-h to a pixel height (panel.js). The splitter's own row is auto,
+     so it collapses to nothing together with the handle. */
+  grid-template-rows: 36px 1fr auto var(--monitors-h, auto);
   grid-template-areas:
     "toolbar toolbar"
     "viewport sidebar"
+    "splitter sidebar"
     "monitors sidebar";
   height: 100vh;
   width: 100vw;
@@ -92,6 +96,40 @@ body {
   height: 100% !important;
 }
 
+/* Drag handle between the viewport and the monitor section. mcScreen.js puts
+   body.no-monitors on while there is nothing to show, which removes the handle
+   and drops any dragged height back to "size to the contents". */
+#monitors-resizer {
+  grid-area: splitter;
+  height: 5px;
+  cursor: row-resize;
+  background: transparent;
+}
+
+#monitors-resizer:hover,
+#monitors-resizer:focus-visible,
+body.resizing-monitors #monitors-resizer {
+  background: var(--vscode-focusBorder, #007fd4);
+  outline: none;
+}
+
+body.no-monitors #monitors-resizer { display: none; }
+
+/* Drop back to content sizing while there is nothing to show — overriding the
+   track itself, not --monitors-h: panel.js sets that variable inline, and an
+   inline value beats any stylesheet rule. A height dragged earlier is kept in
+   the variable and comes back with the next screen config. */
+body.no-monitors {
+  grid-template-rows: 36px 1fr auto auto;
+}
+
+/* Keep the row-resize cursor (and kill text selection) for the whole drag,
+   even when the pointer runs ahead of the handle. */
+body.resizing-monitors {
+  cursor: row-resize;
+  user-select: none;
+}
+
 /* Monitor stand-in for LifeBoatAPI's Windows-only simulator exe (macOS).
    The row collapses to nothing while hidden, so Windows layout is unchanged. */
 #monitors {
@@ -107,6 +145,10 @@ body {
   max-height: 50vh;
   overflow: hidden;
 }
+
+/* A dragged height is the user's call — the 50vh guard only applies to the
+   automatic size. */
+body.monitors-sized #monitors { max-height: none; }
 
 #monitors.hidden { display: none; }
 
@@ -281,6 +323,19 @@ body {
   border: 1px solid var(--vscode-panel-border, #444);
   cursor: crosshair;
   touch-action: none;
+}
+
+/* "Values" toolbar toggle: collapse the whole right column so the viewport and
+   the monitors get the full panel width. The column has to go to 0 as well as
+   the element to display:none — a hidden element in a 240px track would leave
+   an empty gutter. Both #viewport and #monitors-list watch their own size, so
+   the three.js renderer and the monitor fit scale follow on their own. */
+body.sidebar-hidden {
+  grid-template-columns: 1fr 0;
+}
+
+body.sidebar-hidden #sidebar {
+  display: none;
 }
 
 #sidebar {

@@ -64,6 +64,12 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
    - `channels.js` — **CH13–17 derived math, pure module** (no DOM/three imports) so Node tests import it directly. Its Lua twin is `PhySim.lua:injectAsInputs`, guarded by `test/parity.test.mjs`.
    - `dom.js` — element registry, slider⇄number sync, channel table, and the **single shared `syncGuard`** re-entry flag (also used by `pose.js` — keep it one flag).
    - `scene.js` — Three.js scene, airplane mesh, Orbit/TransformControls, resize, axis labels.
+     Its `ResizeObserver` only marks the size dirty; `flushResize()` applies it from
+     `panel.js`'s render loop. RO callbacks run *after* the frame's rAF callbacks and
+     resizing a WebGL drawing buffer clears it, so calling `setSize()` in the observer
+     wipes the frame that was just drawn — during a continuous resize (the monitor
+     splitter, the window) the viewport then reads as greyed out with only the HTML
+     axis labels left. Keep the buffer resize inside the loop.
    - `pose.js` — pose number inputs ⇄ gizmo sync.
    - `messaging.js` — `readState()` / `sendState()` / rAF-debounced `scheduleSend()`.
    - `simulation.js` — fixed-timestep integration (60 Hz accumulator) + recording/playback.

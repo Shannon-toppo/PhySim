@@ -147,15 +147,27 @@ scene.add(transform);
 transform.addEventListener("dragging-changed", e => { orbit.enabled = !e.value; });
 
 // --- Resize & label projection ------------------------------------------------
-function resize() {
+// The observer only marks the size dirty; flushResize() does the work from the
+// render loop. ResizeObserver callbacks run AFTER the frame's rAF callbacks but
+// BEFORE paint, and resizing a WebGL drawing buffer clears it — calling
+// setSize() straight from the observer wipes the frame the loop just drew, so
+// the viewport goes blank for as long as it keeps being resized (dragging the
+// monitor splitter, or the window). Doing it inside the loop puts the clear and
+// the render back in the same frame.
+let resizePending = true;
+
+export function flushResize() {
+  if (!resizePending) return;
   const w = viewport.clientWidth, h = viewport.clientHeight;
-  if (w === 0 || h === 0) return;
+  if (w === 0 || h === 0) return;   // laid out at zero — stay dirty, retry later
+  resizePending = false;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
-new ResizeObserver(resize).observe(viewport);
-resize();
+
+new ResizeObserver(() => { resizePending = true; }).observe(viewport);
+flushResize();
 
 const _v = new THREE.Vector3();
 export function updateLabels() {

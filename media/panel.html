@@ -18,7 +18,9 @@
 }
 </script>
 </head>
-<body>
+<!-- no-monitors matches #monitors starting hidden: no splitter until a screen
+     config arrives (mcScreen.js keeps the class in step from then on). -->
+<body class="no-monitors">
   <div id="toolbar">
     <button data-mode="translate" class="mode active" title="Translate (W)">Move</button>
     <button data-mode="rotate"    class="mode"        title="Rotate (E)">Rotate</button>
@@ -29,10 +31,17 @@
     <span id="rec-count" class="rec-count"></span>
     <button id="csv-log" title="Stream CH1-17 to a CSV file for offline analysis">&#11015; CSV Log</button>
     <span id="csv-count" class="rec-count"></span>
+    <button id="sidebar-toggle" class="active" title="Hide the sliders &amp; number inputs to give the viewport and the monitors the full panel width (H)">&#9707; Values</button>
     <span class="hint">Drag the gizmo. Left-drag = orbit, right/wheel-drag = pan, scroll = zoom.</span>
   </div>
 
   <div id="viewport"></div>
+
+  <!-- Drag handle between the viewport and the monitor section. Hidden (and
+       ignored by the grid) while no monitor is on screen — see body.no-monitors
+       in panel.css. -->
+  <div id="monitors-resizer" role="separator" aria-orientation="horizontal" tabindex="0"
+       title="Drag to resize the monitor area (arrow keys to nudge, double-click to fit the contents)"></div>
 
   <div id="monitors" class="hidden">
     <div class="monitors-head">

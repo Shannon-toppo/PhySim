@@ -22,6 +22,12 @@ automatically opens a panel containing:
 - **CSV logging** — the toolbar's *⬇ CSV Log* button streams CH1–17 to a file
   you pick: one row per tick while simulating, plus a row every time you move
   the gizmo while paused
+- a **draggable split** between the 3D viewport and the monitor section: drag
+  the border to resize the monitor area (arrow keys nudge it, Shift for bigger
+  steps, double-click goes back to sizing it to the contents)
+- a **sidebar toggle** — the toolbar's *◫ Values* button (or the **H** key)
+  hides the sliders, number inputs and channel table so the 3D viewport and the
+  monitors get the full panel width
 - a live readout of all 17 channels
 
 The values are streamed over a local TCP socket to a small Lua helper

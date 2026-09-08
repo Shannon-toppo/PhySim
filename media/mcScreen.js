@@ -449,6 +449,9 @@ export function applyScreenConfig(screens) {
   }
 
   monitorsSection.classList.toggle("hidden", monitors.size === 0);
+  // The splitter — and any height dragged with it — only mean something while
+  // a monitor is on screen; panel.css keys both off this class.
+  document.body.classList.toggle("no-monitors", monitors.size === 0);
   monitorAddEl.disabled = monitors.size >= MAX_SCREENS;
   // Screen 1 is LifeBoatAPI's own default and the only one whose touch and
   // size reach the composite inputs (Simulator._simulateDefaultInputs), so

@@ -36,10 +36,17 @@ export const recCountEl = mustGet("rec-count");
 export const csvBtn = /** @type {HTMLButtonElement} */ (mustGet("csv-log"));
 export const csvCountEl = mustGet("csv-count");
 
+// Sidebar visibility toggle — hides the sliders/number inputs so the viewport
+// and the monitor section get the full panel width (panel.js owns the state).
+export const sidebarToggleBtn = /** @type {HTMLButtonElement} */ (mustGet("sidebar-toggle"));
+
 // Monitor stand-in for LifeBoatAPI's Windows-only simulator exe (macOS).
 // Starts hidden; mcScreen.js unhides it once a screenConfig arrives.
 export const monitorsSection = mustGet("monitors");
 export const monitorsList = mustGet("monitors-list");
+// Drag handle between the viewport and the monitor section (panel.js owns the
+// drag; mcScreen.js hides it via body.no-monitors when there is nothing to show).
+export const monitorsResizer = mustGet("monitors-resizer");
 export const monitorZoomEl = /** @type {HTMLSelectElement} */ (mustGet("monitor-zoom"));
 export const monitorAddEl = /** @type {HTMLButtonElement} */ (mustGet("monitor-add"));
 export const monitorTrueColourEl = /** @type {HTMLInputElement} */ (mustGet("monitor-truecolour"));

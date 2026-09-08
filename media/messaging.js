@@ -68,3 +68,22 @@ export function sendTouch(t) {
 export function requestScreens() {
   vscode.postMessage({ type: "screenRequest" });
 }
+
+/**
+ * Declare or reconfigure one monitor. The host validates before it forwards
+ * anything to Lua, and answers with a fresh screenConfig — the controls are
+ * never authoritative on their own, so a rejected size simply doesn't stick.
+ * @param {{screen: number, size: string, poweredOn?: boolean, portrait?: boolean}} s
+ */
+export function sendScreenSet(s) {
+  vscode.postMessage({ type: "screenSet", poweredOn: true, portrait: false, ...s });
+}
+
+/**
+ * Drop a monitor. Lua has no delete for its `_screens` table, so this powers
+ * the screen off; the microcontroller can bring it back with `setScreen`.
+ * @param {number} screen
+ */
+export function sendScreenRemove(screen) {
+  vscode.postMessage({ type: "screenRemove", screen });
+}

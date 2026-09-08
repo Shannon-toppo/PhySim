@@ -36,6 +36,7 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `trail.test.mjs` — `media/trail.js`: the trail buffer keeps the newest points in draw order, drops sub-millimetre samples, survives a capacity change, and the velocity-arrow length stays inside the scene for any speed.
 - `blend.test.mjs` — `media/blend.js`: packed words really are R,G,B,A in memory order (get this backwards and every monitor colour comes out with red and blue swapped), and blending is an exact lerp that doesn't drift over repeated draws.
 - `raster.test.mjs` — `media/raster.js`: exact pixel sets for axis-aligned and 45° lines, circle symmetry, triangle coverage, and the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
+- `monitorConfig.test.mjs` — `media/monitorConfig.js`: the size table round-trips through pixels in both orientations, `nextScreenNumber` reuses a removed slot, and `fitScale` picks one factor for all monitors (and never 0).
 - `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, and the tick/send de-duplication.
 - `csvLogger.test.mjs` — `src/csvLogger.ts`: CRLF records, rows arriving with no log open, a row smuggling its own newline, truncate-on-start, and an end-to-end pass where webview-shaped batches parse back as one table.
 - `simstub.test.mjs` — the shared `frame.ts` framing (prefix encode/decode, split/concat/corrupt-prefix resync) plus `simStubServer.ts`'s protocol handling: `SCREENCONFIG` → `SCREENSIZE`, portrait swap, `TICKEND` buffering/flush, draw-command parsing, and `sendTouch()`'s wire shape.
@@ -71,7 +72,8 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
    - `csv.js` — **column set, row formatting and sample bookkeeping, pure module** (no DOM) so `test/csv.test.mjs` runs it in Node. Owns `CSV_HEADER`, which the webview sends as the log's first row — the host never learns what a channel is. `tickRow`/`sendRow` implement the one-row-per-frame handshake: `stepSimulation()` calls `sendState()` after its tick loop, and without it every simulated frame would end with a duplicate of its last tick.
    - `visuals.js` — the path trail (a `THREE.Line` with an age-faded vertex colour) and the world-frame velocity arrow, plus the sidebar toggles that own them. Samples per **tick** (called from `simulation.js`'s fixed-timestep loop) as well as per rAF, so a throttled panel still records the path at full resolution.
    - `trail.js` — **trail ring buffer + arrow scaling, pure module** (no DOM/three) so `test/trail.test.mjs` runs it in Node. The buffer shifts rather than wraps: the vertex order must equal the draw order or the line draws a stray segment across the seam.
-   - `mcScreen.js` — microcontroller monitor rendering (always on macOS, opt-in on Windows); draws `SimStubServer`'s forwarded screen config/draw commands and relays touch input back. See "Monitor colours" below before touching `makeColour()`, and "Monitor rendering cost" before making it draw through the canvas 2D API again.
+   - `mcScreen.js` — microcontroller monitor rendering (always on macOS, opt-in on Windows); draws `SimStubServer`'s forwarded screen config/draw commands and relays touch input back. Handles **any number of screens** — one `<canvas>` each, all at one shared zoom factor. See "Monitor colours" below before touching `makeColour()`, "Monitor rendering cost" before making it draw through the canvas 2D API again, and "Multiple monitors" before touching the screen controls.
+   - `monitorConfig.js` — **monitor sizes, screen-number allocation and the shared fit scale, pure module** (no DOM/canvas) so `test/monitorConfig.test.mjs` runs it in Node. `SimStubServer` validates independently — a webview message is untrusted — and `test/simstub.test.mjs` checks the host accepts everything the dropdown offers.
    - `blend.js` — **colour packing + source-over blending, pure module** (no DOM/canvas) so `test/blend.test.mjs` runs it in Node. Owns the endianness probe that decides how RGBA bytes pack into an ImageData word.
    - `pixelFont.js` — the hand-drawn 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush).
    - `raster.js` — **integer-grid line/circle/triangle rasterisers, pure module** (no DOM/canvas — the target is a `plot`/`fillRun` callback) so `test/raster.test.mjs` can run them in Node. Canvas path drawing anti-aliases, which the integer CSS upscale magnifies into a visible haze; Stormworks monitors have no AA. Every rasteriser clips to the screen, so a microcontroller passing ±1e9 coordinates can't hang the panel.
@@ -84,7 +86,7 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
    - `debugConfigPatcher.ts` is the **critical glue**: see "LifeBoatAPI integration" below.
    - `libraryPathInjector.ts` writes the bundled `lua/` path into `lifeboatapi.stormworks.libs.libraryPaths` for editor autocompletion. Re-run on `onDidChangeWorkspaceFolders`. The **runtime** does not depend on this setting — only autocomplete does.
    - `pathUtils.ts` — shared `normalize()` for Windows-safe path comparison (used by both files above).
-   - `simStubServer.ts` — the port-14238 stand-in for `STORMWORKS_Simulator.exe`; started from `debugConfigPatcher.ts` before `lua-debug` spawns Lua, whenever `useBuiltInMonitors()` says PhySim is drawing the monitors.
+   - `simStubServer.ts` — the port-14238 stand-in for `STORMWORKS_Simulator.exe`; started from `debugConfigPatcher.ts` before `lua-debug` spawns Lua, whenever `useBuiltInMonitors()` says PhySim is drawing the monitors. Also owns the panel's declared monitors (`configureScreen` / `removeScreen` / `getWantedScreens`) — see "Multiple monitors".
    - `simulatorLuaPatch.ts` — the `_simulator.lua` text surgery (socket injection, POSIX file-scan shim, exe-launch suppression) as a **pure, `vscode`-free module** so `test/simulatorLuaPatch.test.mjs` can run it in Node.
    - `frame.ts` — the `%04d`-length-prefixed framing shared by `physServer.ts` and `simStubServer.ts`.
    - `csvLogger.ts` — the CSV log file: open/append/close plus row sanitising, as a **pure, `vscode`-free module** so `test/csvLogger.test.mjs` can run it in Node. It appends whatever lines it is handed and counts them; the column set lives in `media/csv.js`.
@@ -138,6 +140,43 @@ washed-out result is *correct*; don't "fix" it by changing `rgba()`.
 The correction is applied unclamped (255 leaves as 272.9), so the panel's
 optional **True colour** toggle (`unGamma`, off by default) inverts it
 losslessly back to the original `setColor` values.
+
+## Multiple monitors
+
+The panel can give the microcontroller monitors its script never asked for.
+Nothing about that is patched into Lua — LifeBoatAPI's `Simulator` already
+renders **every** powered-on entry of its `_screens` table (`onDraw` runs once
+per screen, with `screen.getWidth()` reporting that screen's size), and two of
+its own message handlers are enough to populate it:
+
+| Command | Effect in `Simulator.lua` |
+|---------|---------------------------|
+| `SCREENSIZE\|n\|w\|h` | sets the size, **creating** `_screens[n]` if missing (`_screens[n] = _screens[n] or SimulatorScreen:new(n)`, which starts powered on) |
+| `SCREENPOWER\|n\|0` or `\|1` | switches one off/on; off also zeroes its touch state |
+
+Three things about this are easy to break:
+
+- **Ordering.** `_beginSimulation` sends its default `setScreen(1, "3x3")`
+  *before* the main loop starts reading our messages, so the panel's layout is
+  pushed on the first `SCREENCONFIG` of a connection, not on connect. Push
+  earlier and that default lands on top of a screen 1 the user resized.
+- **Once per connection.** `pushWantedScreens` latches on `pushed`. A script
+  calling `setScreen` every tick would otherwise fight the panel forever. The
+  script wins any screen number it touches, which is the right precedence.
+- **Removal is a power-off.** Lua has no command to drop an entry from
+  `_screens`, so a removed monitor stays there as `poweredOn = false` and comes
+  back if it is added again — or if the script calls `setScreen` for it.
+
+The layout lives in `ctx.workspaceState` under `physim.monitors` (how many
+screens a microcontroller drives is a property of the project) and survives
+`SimStubServer.stop()`, which only clears session state. Screen 1 cannot be
+removed from the panel: it is LifeBoatAPI's default and the only screen whose
+size and touch reach the composite inputs (`Simulator._simulateDefaultInputs`).
+
+In the panel every monitor is drawn at **one shared zoom factor**, fit
+included. Fitting each one to the column separately would scale a 1x1 by 8 and
+a 3x3 by 2, so the small monitor would draw larger than the big one. Fit is
+bounded by width only, as it has always been; tall layouts scroll.
 
 ## Monitor rendering cost
 

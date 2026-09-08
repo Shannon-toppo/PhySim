@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as os from "os";
 import { PhysServer, PhysState, ZERO_STATE } from "./physServer";
-import { SimStubServer } from "./simStubServer";
+import { SimStubServer, ScreenRequest, sanitizeScreenRequest } from "./simStubServer";
 import { CsvLogger, defaultLogPath } from "./csvLogger";
 import { log } from "./log";
 
@@ -32,16 +32,31 @@ interface TouchMsg {
 }
 /** Webview asking for a repaint of the monitors it may have missed. */
 interface ScreenRequestMsg { type: "screenRequest"; }
+/** Panel's monitor controls: declare/reconfigure one screen, or drop one. */
+interface ScreenSetMsg {
+  type: "screenSet";
+  screen: number;
+  size: string;
+  poweredOn?: boolean;
+  portrait?: boolean;
+}
+interface ScreenRemoveMsg { type: "screenRemove"; screen: number; }
 /** CSV logging: start asks for a file, rows carry pre-formatted lines. */
 interface CsvStartMsg { type: "csvStart"; }
 interface CsvRowsMsg { type: "csvRows"; rows: unknown; }
 interface CsvStopMsg { type: "csvStop"; samples?: unknown; }
 type FromWebview =
   StateMsg | PresetSaveMsg | PresetLoadMsg | PresetDeleteMsg | PresetListRequestMsg
-  | TouchMsg | ScreenRequestMsg | CsvStartMsg | CsvRowsMsg | CsvStopMsg;
+  | TouchMsg | ScreenRequestMsg | ScreenSetMsg | ScreenRemoveMsg
+  | CsvStartMsg | CsvRowsMsg | CsvStopMsg;
 
 type PresetMap = { [name: string]: PhysState };
 const PRESETS_KEY = "physim.presets";
+/**
+ * Monitor layout. Workspace-scoped, not global: how many screens a
+ * microcontroller drives is a property of the project being debugged.
+ */
+const MONITORS_KEY = "physim.monitors";
 const MAX_PRESET_NAME_LEN = 64;
 
 function isTriple(v: unknown): v is Triple {
@@ -83,6 +98,9 @@ export class PhysSimPanelManager {
     // into whichever panel happens to be open. State needed to repaint a panel
     // opened later lives in the stub itself (getScreens / getLastFrame).
     if (this.stub) {
+      // Restore the saved monitor layout before anything can connect; the stub
+      // re-declares it to Lua on the next debug session.
+      this.stub.setWantedScreens(this.getMonitorLayout());
       this.stub.onScreenConfig = screens => {
         if (this.panel) this.panel.webview.postMessage({ type: "screenConfig", screens });
       };
@@ -186,6 +204,10 @@ export class PhysSimPanelManager {
           // Posted once by the webview at load: a panel opened mid-session
           // would otherwise sit blank until the next SCREENCONFIG.
           this.replayScreens(created);
+          return;
+        }
+        if (msg.type === "screenSet" || msg.type === "screenRemove") {
+          this.applyScreenMessage(msg);
           return;
         }
         if (msg.type === "touch") {
@@ -364,6 +386,43 @@ export class PhysSimPanelManager {
     if (this.panel) {
       this.panel.webview.postMessage({ type: "csvState", logging, path: this.csv.getPath() });
     }
+  }
+
+  /**
+   * Add, resize or drop one monitor. Only ever reaches Lua when PhySim is the
+   * one drawing the monitors — on Windows with the real exe the stub is never
+   * started, and configureScreen then does nothing but remember the layout.
+   */
+  private applyScreenMessage(msg: ScreenSetMsg | ScreenRemoveMsg): void {
+    if (!this.stub) return;
+    if (msg.type === "screenRemove") {
+      const n = Math.round(Number(msg.screen));
+      if (!Number.isFinite(n)) return;
+      this.stub.removeScreen(n);
+    } else {
+      const req = sanitizeScreenRequest({ ...msg, number: msg.screen });
+      if (!req) {
+        log(`Ignored a screen config for screen ${msg.screen} (size "${msg.size}").`);
+        return;
+      }
+      this.stub.configureScreen(req);
+    }
+    this.setMonitorLayout(this.stub.getWantedScreens());
+  }
+
+  private getMonitorLayout(): ScreenRequest[] {
+    const raw = this.ctx.workspaceState.get<unknown>(MONITORS_KEY, []);
+    if (!Array.isArray(raw)) return [];
+    const out: ScreenRequest[] = [];
+    for (const entry of raw) {
+      const req = sanitizeScreenRequest(entry);
+      if (req) out.push(req);
+    }
+    return out;
+  }
+
+  private setMonitorLayout(list: ScreenRequest[]): Thenable<void> {
+    return this.ctx.workspaceState.update(MONITORS_KEY, list);
   }
 
   private getPresets(): PresetMap {

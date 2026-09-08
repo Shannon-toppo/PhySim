@@ -15,6 +15,16 @@
 // so the result looks like the chunky in-game monitor rather than a blurry
 // upscale.
 //
+// There can be several. LifeBoatAPI's simulator runs onDraw once per
+// powered-on screen with `screen.getWidth()/getHeight()` reporting that
+// screen's size, exactly as the game does for a microcontroller wired to more
+// than one monitor, and every draw command carries the screen number. Screens
+// normally come from the script's own `simulator:setScreen` calls; the header
+// controls here declare extra ones, which the host turns into the SCREENSIZE /
+// SCREENPOWER commands Lua already understands (see media/monitorConfig.js and
+// src/simStubServer.ts). Panel-declared screens lose to the script's own
+// setScreen for the same number.
+//
 // The exe clears the screen between rendered frames and the MC's onDraw
 // repaints from scratch every frame, so each screenFrame starts from black.
 //
@@ -34,9 +44,12 @@
 // retainContextWhenHidden keeps the webview receiving messages while hidden.
 
 import {
-  monitorsSection, monitorsList, monitorZoomEl, monitorTrueColourEl
+  monitorsSection, monitorsList, monitorZoomEl, monitorTrueColourEl, monitorAddEl
 } from "./dom.js";
-import { sendTouch } from "./messaging.js";
+import { sendTouch, sendScreenSet, sendScreenRemove } from "./messaging.js";
+import {
+  SCREEN_SIZES, DEFAULT_SIZE, MAX_SCREENS, nextScreenNumber, pixelsToSize, fitScale
+} from "./monitorConfig.js";
 import {
   drawPixelText, measurePixelText, measurePixelBlockHeight, LINE_HEIGHT
 } from "./pixelFont.js";
@@ -52,6 +65,7 @@ import { packColour, blendPixel } from "./blend.js";
  * @property {number} height
  * @property {boolean} poweredOn
  * @property {boolean} portrait
+ * @property {string} [size] block size, e.g. "3x3"; derived when absent
  */
 
 /** One parsed draw call: [COMMAND, ...params]. @typedef {(string|number)[]} DrawCommand */
@@ -62,7 +76,9 @@ import { packColour, blendPixel } from "./blend.js";
  * @property {CanvasRenderingContext2D} ctx
  * @property {ImageData} img the pixel buffer every draw call writes into
  * @property {Uint32Array} u32 one word per pixel, a view over img.data
- * @property {HTMLElement} label
+ * @property {HTMLElement} name the "Screen 1 - 96x96 - 4x" caption
+ * @property {HTMLSelectElement} sizeEl
+ * @property {HTMLInputElement} portraitEl
  * @property {ScreenInfo} info
  */
 
@@ -156,6 +172,13 @@ let oceanColour = DEFAULT_OCEAN;
 // *integer* factor (with image-rendering:pixelated) to keep pixels square.
 // "fit" picks the largest factor whose result still fits the monitors column;
 // the fixed factors are applied as-is and simply overflow-scroll if too wide.
+//
+// Every monitor gets the SAME factor, fit included. Fitting each one to the
+// column separately would scale a 1x1 up by 8 and a 3x3 by 2, so the small
+// monitor would draw larger than the big one — which is the one thing a
+// multi-monitor view has to get right. fitScale() in monitorConfig.js picks
+// the largest factor that keeps them in one row, and falls back to what the
+// widest can take once they have to wrap.
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 16;
@@ -163,6 +186,8 @@ const MAX_SCALE = 16;
 const FALLBACK_WIDTH = 480;
 /** The canvas' 1px border on each side is not available to the pixels. */
 const CANVAS_CHROME = 2;
+/** #monitors-list's flex gap, in px. Kept in step with panel.css. */
+const MONITOR_GAP = 10;
 
 /** Current selection: "fit", or a fixed integer factor as a string. */
 let zoomMode = "fit";
@@ -174,31 +199,35 @@ let zoomMode = "fit";
 let zoomFloat = 4;
 
 /**
- * @param {number} w logical (Stormworks) pixel width
+ * The one factor every monitor is drawn at.
  * @returns {number} integer CSS upscale factor
  */
-function scaleFor(w) {
+function currentScale() {
   const fixed = parseInt(zoomMode, 10);
   if (Number.isFinite(fixed) && fixed > 0) {
     return Math.max(MIN_SCALE, Math.min(MAX_SCALE, fixed));
   }
-  const avail = (monitorsList.clientWidth || FALLBACK_WIDTH) - CANVAS_CHROME;
-  const fit = Math.floor(avail / Math.max(1, w));
-  return Math.max(MIN_SCALE, Math.min(MAX_SCALE, fit));
+  const widths = Array.from(monitors.values(), m => m.canvas.width);
+  return fitScale(widths, monitorsList.clientWidth || FALLBACK_WIDTH, {
+    gap: MONITOR_GAP, chrome: CANVAS_CHROME, min: MIN_SCALE, max: MAX_SCALE
+  });
 }
 
-/** @param {Monitor} m */
-function applyScale(m) {
+/**
+ * @param {Monitor} m
+ * @param {number} scale
+ */
+function applyScale(m, scale) {
   const w = m.canvas.width, h = m.canvas.height;
-  const scale = scaleFor(w);
   m.canvas.style.width = `${w * scale}px`;
   m.canvas.style.height = `${h * scale}px`;
-  m.label.textContent = `Screen ${Math.round(n(m.info.number))} — ${w}x${h} · ${scale}×`;
+  m.name.textContent = `Screen ${Math.round(n(m.info.number))} — ${w}x${h} · ${scale}×`;
 }
 
 /** Re-run the scale calculation for every live monitor. */
 function relayout() {
-  for (const m of monitors.values()) applyScale(m);
+  const scale = currentScale();
+  for (const m of monitors.values()) applyScale(m, scale);
 }
 
 monitorZoomEl.addEventListener("change", () => {
@@ -240,9 +269,7 @@ function wheelPixels(e) {
  * @returns {number}
  */
 function currentZoomFloat() {
-  if (zoomMode !== "fit") return zoomFloat;
-  const first = monitors.values().next().value;
-  return first ? scaleFor(first.canvas.width) : zoomFloat;
+  return zoomMode === "fit" ? currentScale() : zoomFloat;
 }
 
 monitorsSection.addEventListener("wheel", e => {
@@ -398,6 +425,10 @@ export function applyScreenConfig(screens) {
     const existing = monitors.get(num);
     if (existing && existing.canvas.width === w && existing.canvas.height === h) {
       existing.info = s;
+      // Same pixels, possibly a different declaration behind them — a 3x3
+      // turned portrait keeps its 96x96 canvas but must not leave the
+      // portrait box unticked.
+      syncControls(existing);
       continue;
     }
     if (existing) existing.canvas.parentElement?.remove();
@@ -418,6 +449,14 @@ export function applyScreenConfig(screens) {
   }
 
   monitorsSection.classList.toggle("hidden", monitors.size === 0);
+  monitorAddEl.disabled = monitors.size >= MAX_SCREENS;
+  // Screen 1 is LifeBoatAPI's own default and the only one whose touch and
+  // size reach the composite inputs (Simulator._simulateDefaultInputs), so
+  // removing it would leave a session no script can talk to.
+  for (const [num, m] of monitors) {
+    const remove = m.canvas.parentElement?.querySelector(".monitor-remove");
+    if (remove instanceof HTMLButtonElement) remove.disabled = num === 1;
+  }
   // After unhiding, monitorsList finally has a real clientWidth for "fit".
   relayout();
   // A resized or newly powered-on screen starts black; repaint the frame we
@@ -438,7 +477,36 @@ function createMonitor(num, w, h, info) {
 
   const label = document.createElement("div");
   label.className = "monitor-label";
-  label.textContent = `Screen ${num} — ${w}x${h}`;
+
+  const name = document.createElement("span");
+  name.className = "monitor-name";
+  name.textContent = `Screen ${num} — ${w}x${h}`;
+
+  const sizeEl = document.createElement("select");
+  sizeEl.className = "monitor-size";
+  sizeEl.title = "Monitor block size, as simulator:setScreen spells it.";
+  for (const size of SCREEN_SIZES) {
+    const opt = document.createElement("option");
+    opt.value = size;
+    opt.textContent = size;
+    sizeEl.appendChild(opt);
+  }
+
+  const portraitLabel = document.createElement("label");
+  portraitLabel.className = "monitor-portrait";
+  portraitLabel.title = "Stand the monitor on its end (swaps width and height).";
+  const portraitEl = document.createElement("input");
+  portraitEl.type = "checkbox";
+  portraitLabel.appendChild(portraitEl);
+  portraitLabel.appendChild(document.createTextNode("Portrait"));
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "monitor-remove";
+  remove.textContent = "\u2715";
+  remove.title = "Power this monitor off and drop it from the panel.";
+
+  label.append(name, sizeEl, portraitLabel, remove);
 
   const canvas = document.createElement("canvas");
   canvas.width = w;
@@ -457,10 +525,52 @@ function createMonitor(num, w, h, info) {
   monitorsList.appendChild(wrapper);
 
   attachTouch(canvas, num);
-  const m = { canvas, ctx, img, u32, label, info };
-  applyScale(m);
+  const m = { canvas, ctx, img, u32, name, sizeEl, portraitEl, info };
+  syncControls(m);
+
+  // The host is what actually changes anything; the controls only ask. It
+  // answers with a screenConfig that rebuilds this monitor, so a request Lua
+  // or the host declines simply leaves the widgets where they were.
+  const push = () => sendScreenSet({
+    screen: num, size: sizeEl.value, portrait: portraitEl.checked, poweredOn: true
+  });
+  sizeEl.addEventListener("change", push);
+  portraitEl.addEventListener("change", push);
+  remove.addEventListener("click", () => sendScreenRemove(num));
+
+  applyScale(m, currentScale());
   return m;
 }
+
+/**
+ * Point the size/portrait widgets at what the screen actually is. `size` comes
+ * from the host when it knows it; a screen the microcontroller declared is
+ * only ever reported to us in pixels, so it is derived back into blocks.
+ * @param {Monitor} m
+ */
+function syncControls(m) {
+  const info = m.info;
+  const portrait = info.portrait === true;
+  const size = typeof info.size === "string" && info.size
+    ? info.size
+    : pixelsToSize(m.canvas.width, m.canvas.height, portrait);
+  // A script is free to call setScreen("4x4"); show it rather than snapping
+  // the dropdown to something the user never chose.
+  if (!Array.from(m.sizeEl.options).some(o => o.value === size)) {
+    const opt = document.createElement("option");
+    opt.value = size;
+    opt.textContent = size;
+    m.sizeEl.appendChild(opt);
+  }
+  m.sizeEl.value = size;
+  m.portraitEl.checked = portrait;
+}
+
+monitorAddEl.addEventListener("click", () => {
+  const screen = nextScreenNumber(monitors.keys());
+  if (!screen) return;
+  sendScreenSet({ screen, size: DEFAULT_SIZE, portrait: false, poweredOn: true });
+});
 
 // --- Frame replay ----------------------------------------------------------
 
@@ -743,17 +853,20 @@ function drawTextbox(m, x, y, w, h, hAlign, vAlign, text) {
 
 // --- Pointer input ---------------------------------------------------------
 
-/** Coalesce pointermove floods to one TOUCH per animation frame. */
-let movePending = false;
-/** @type {{screen:number,x:number,y:number} | null} */
-let queuedMove = null;
-
 /**
+ * Pointer input for one monitor. The move-coalescing state is per canvas: with
+ * several monitors on screen a pointer-up on one would otherwise cancel a
+ * queued move belonging to another, and two pens or touch points dragging on
+ * different monitors would overwrite each other's position.
  * @param {HTMLCanvasElement} canvas
  * @param {number} screen
  */
 function attachTouch(canvas, screen) {
   let down = false;
+  /** Coalesce pointermove floods to one TOUCH per animation frame. */
+  let movePending = false;
+  /** @type {{x:number,y:number} | null} */
+  let queuedMove = null;
 
   /**
    * @param {PointerEvent} e
@@ -781,14 +894,14 @@ function attachTouch(canvas, screen) {
   canvas.addEventListener("pointermove", e => {
     if (!down) return;
     const p = toPixels(e);
-    queuedMove = { screen, x: p.x, y: p.y };
+    queuedMove = { x: p.x, y: p.y };
     if (movePending) return;
     movePending = true;
     requestAnimationFrame(() => {
       movePending = false;
       const q = queuedMove;
       queuedMove = null;
-      if (q) sendTouch({ screen: q.screen, isTouched: 1, isTouchedAlt: 0, x: q.x, y: q.y, xAlt: 0, yAlt: 0 });
+      if (q) sendTouch({ screen, isTouched: 1, isTouchedAlt: 0, x: q.x, y: q.y, xAlt: 0, yAlt: 0 });
     });
   });
 

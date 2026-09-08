@@ -161,9 +161,32 @@ body {
   cursor: pointer;
 }
 
-.monitor-zoom select:focus {
+.monitor-zoom select:focus,
+.monitor-size:focus {
   outline: 1px solid var(--vscode-focusBorder, #007fd4);
   outline-offset: -1px;
+}
+
+#monitor-add {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #ccc);
+  border: none;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+#monitor-add:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+#monitor-add:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 #monitors-list {
@@ -187,11 +210,68 @@ body {
   overflow-x: auto;
 }
 
+/* The caption doubles as the per-monitor control strip. It stays inside the
+   .monitor wrapper (which scrolls horizontally at a large fixed zoom), so the
+   controls travel with their own canvas rather than lining up with a
+   neighbour's. */
 .monitor-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 10px;
-  opacity: 0.6;
   font-family: var(--vscode-editor-font-family, monospace);
   margin-bottom: 2px;
+}
+
+.monitor-name {
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.monitor-size {
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 0 2px;
+  font-size: 10px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.monitor-portrait {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0.75;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.monitor-portrait input {
+  margin: 0;
+  accent-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.monitor-remove {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground, #ccc);
+  opacity: 0.5;
+  padding: 0 3px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.monitor-remove:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.monitor-remove:disabled {
+  opacity: 0.15;
+  cursor: default;
 }
 
 .monitor-canvas {

@@ -85,6 +85,8 @@ that:
   touch input back. Shapes are rasterised onto the pixel grid rather than drawn as
   anti-aliased paths, so they stay hard-edged like an in-game monitor. The monitor
   scale follows the Zoom dropdown, a trackpad pinch, or Ctrl/Cmd + wheel.
+- **Multiple monitors** — a microcontroller wired to more than one monitor is
+  reproduced as-is. See [Multiple monitors](#multiple-monitors) below.
 - **Colours** — LifeBoatAPI gamma-corrects every colour in Lua to replicate what the
   game does to monitors, which lifts dark tones a lot: a `setColor` of 30 arrives as
   112, and anything from 217 up clips to white. PhySim draws the values as they
@@ -105,6 +107,37 @@ differs from the real simulator in a few ways:
 
 Verified against LifeBoatAPI 0.0.33. The full investigation is in
 [`doc/macos-support.md`](macos-support.md).
+
+### Multiple monitors
+
+A microcontroller driving several monitors can be laid out in the panel exactly
+as it would be in game.
+
+**+ Monitor** in the Monitors header adds a screen; each monitor's caption row
+carries a size dropdown (`1x1` through `9x5`), a **Portrait** checkbox for
+standing it on its end, and **✕** to take it off. The simulator runs `onDraw`
+once per powered-on monitor, with `screen.getWidth()` / `getHeight()` reporting
+the screen being drawn, so the microcontroller tells them apart the same way it
+does in game. Touch input is per monitor too, but only screen 1's reaches the
+composite inputs automatically — see
+[Touch input and channel conflicts](#touch-input-and-channel-conflicts).
+
+- Screens the script declares with `simulator:setScreen(...)` win. The panel
+  only fills in screen numbers the script never touches.
+- Screen 1 cannot be removed: it is LifeBoatAPI's default, and the only screen
+  whose size and touch reach the composite inputs
+  (`Simulator._simulateDefaultInputs`).
+- Removing is a power-off. Lua has no way to delete a screen, so a removed
+  monitor comes back if it is added again — or if the script calls `setScreen`
+  for it.
+- The layout is saved per workspace and restored on the next debug session.
+- Every monitor is drawn at the same zoom factor. Fitting each one separately
+  would make a 1x1 render larger than a 3x3, which hides their real sizes.
+
+This needs PhySim's own monitor rendering — always on macOS, and on Windows
+with `physim.monitors.useBuiltInOnWindows`. With the real
+`STORMWORKS_Simulator.exe`, configure monitors from the script's
+`simulator:setScreen` as before.
 
 ### Built-in monitors on Windows (experimental)
 
@@ -169,6 +202,26 @@ starting at `startCh` (default `1`):
 
 "Rotation" unit: 1.0 = one full revolution (2π rad). Tilt ranges [-0.25, +0.25]
 (±90° from horizontal). Compass wraps at ±0.5.
+
+### Touch input and channel conflicts
+
+Every tick, LifeBoatAPI writes the screen width, height, touch X/Y and alt touch
+X/Y into `input.getNumber(1..6)` (`Simulator._simulateDefaultInputs`).
+`phys:injectAsInputs(simulator, 1)` runs right after that and overwrites CH1-6,
+so **monitor touch coordinates never reach the microcontroller**. LifeBoatAPI
+also remembers channels written from outside and stops writing to them, so they
+do not come back. Move the start channel if you need touch coordinates:
+
+```lua
+phys:injectAsInputs(simulator, 7)   -- CH7-23, leaving CH1-6 for touch
+```
+
+`input.getBool(1)` (is the screen touched) keeps working at any start channel,
+since PhySim writes no booleans. And `_simulateDefaultInputs` only ever reads
+screen 1, so touch on a second monitor has to be read with
+`simulator:getTouchScreen(2)` yourself — the same as with
+`STORMWORKS_Simulator.exe`. Alt touch is not implemented in PhySim and is
+always 0.
 
 ## CSV logging
 

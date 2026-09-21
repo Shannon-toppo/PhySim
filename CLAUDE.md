@@ -148,6 +148,11 @@ The correction is applied unclamped (255 leaves as 272.9), so the panel's
 optional **True colour** toggle (`unGamma`, off by default) inverts it
 losslessly back to the original `setColor` values.
 
+This curve is LifeBoatAPI's model, not something measured on the game's
+monitor: B1's screenshots go through scene lighting and tone mapping, so they
+can't pin an absolute curve. Keep it apart from `doc/monitor-rendering.md`,
+whose blending rules are stated on the `setColor` values a script passes.
+
 ## Multiple monitors
 
 The panel can give the microcontroller monitors its script never asked for.
@@ -235,7 +240,8 @@ the green rulers and labels stay under the brightness threshold.
 
 Storm Code's `screen_raster.rs` (`storm-lua-runner`) was the reference before
 the screenshots and is **wrong on lines, circle side counts and fill edges** —
-don't port from it again.
+don't port from it again. The file of the same name in `storm-editor` is a
+different implementation again; don't use it either.
 
 Compositing, the font and TEXTBOX follow the game too (see
 `doc/ingame-findings.md`): `blend.js` applies the blend weights to **alpha as

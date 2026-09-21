@@ -200,6 +200,16 @@ export function calibrate(path, verbose) {
     pairs = [...claims.values()].filter(p => p.length === 1 && p[0][4]).map(p => p[0].slice(0, 4));
     H = fitHomography(pairs);
   }
+  // A page mark drawn against a ruler merges with its tick and drags the
+  // centroid (D11's text-box corners at x=2). Such a tick sits far off the
+  // fit the others agree on: drop it and fit again.
+  {
+    const scale = Math.hypot(...[0, 1].map(i => map(H, 1, 0)[i] - map(H, 0, 0)[i]));
+    const err = pairs.map(([u, v, X, Y]) => { const [x, y] = map(H, u, v); return Math.hypot(x - X, y - Y) / scale; });
+    const med = err.slice().sort((a, b) => a - b)[err.length >> 1];
+    const keep = pairs.filter((_, i) => err[i] < Math.max(0.2, 3 * med));
+    if (keep.length < pairs.length && keep.length >= 8) { pairs = keep; H = fitHomography(pairs); }
+  }
   const scale = Math.hypot(...[0, 1].map(i => map(H, 1, 0)[i] - map(H, 0, 0)[i]));
   let worst = 0, sum = 0;
   for (const [u, v, X, Y] of pairs) {

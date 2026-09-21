@@ -85,6 +85,12 @@ test("restacking a translucent colour levels off at alpha, not at white", () => 
   assert.ok(Math.abs(shown(px)[0] - 128) <= 1);
 });
 
+test("a frame starts transparent: white a=128 onto it shows as 32 (D9)", () => {
+  const fresh = packColour(0, 0, 0, 0);
+  assert.equal(shown(blendPixel(fresh, 255, 255, 255, 128))[0], 32);
+  assert.ok(shown(blendPixel(fresh, 255, 255, 255, 32))[0] <= 1);   // game: indistinguishable from black
+});
+
 test("an opaque draw always leaves the pixel opaque", () => {
   for (const da of [0, 1, 128, 255]) {
     const out = blendPixel(packColour(9, 9, 9, da), 250, 5, 100, 255);

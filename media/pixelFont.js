@@ -18,9 +18,9 @@
 // outline box (a visible "tofu"), which makes a missing glyph obvious on
 // screen instead of silently swallowing text.
 //
-// The glyphs for A-T, X, Y, W, the digits and the punctuation of page B7 were
-// read off in-game screenshots (doc/ingame-findings.md); the rest are still
-// hand-drawn. A fractional position is floored, as the game does.
+// Every printable ASCII glyph (32-126) matches in-game screenshots (pages B7
+// and D10 in doc/ingame-findings.md); "°" is the only hand-drawn one left. A
+// fractional position is floored, as the game does.
 
 /** Glyph cell width in pixels. */
 export const GLYPH_WIDTH = 4;
@@ -90,7 +90,8 @@ const GLYPH_SOURCE = {
   "-": ["....", "....", "###.", "....", "...."],
   "*": ["#..#", ".##.", "####", ".##.", "#..#"],
   "/": ["..#.", "..#.", ".#..", "#...", "#..."],
-  "\\": ["#...", ".#..", "..#.", "...#", "...."],
+  "\\": ["#...", "#...", ".#..", "..#.", "..#."],
+  "`": [".#..", "..#.", "....", "....", "...."],
   "=": ["....", "###.", "....", "###.", "...."],
   "%": ["##..", "...#", ".##.", "#...", "..##"],
   "(": ["..#.", ".#..", ".#..", ".#..", "..#."],

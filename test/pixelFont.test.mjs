@@ -130,6 +130,11 @@ test("fractional x/y are floored, as in game (B7: 0.5 -> 0, 42.5 -> 42)", () => 
   assert.deepEqual(pts, [[3, 7]]);
 });
 
+test("backslash and backtick have the game's shapes (D10)", () => {
+  assert.deepEqual(render("\\", 5, 4), ["#...", "#...", ".#..", "..#.", "..#."]);
+  assert.deepEqual(render("`", 5, 4), [".#..", "..#.", "....", "....", "...."]);
+});
+
 test("wrapTextBox: counts characters and keeps the spaces (B7)", () => {
   // w=44 holds 8 characters. The game's lines keep their spaces — that is
   // what moves "wrap" and " now " to where the screenshot has them.

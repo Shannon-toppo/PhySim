@@ -156,8 +156,13 @@ function makeColour(r, g, b, a) {
   return { packed: packColour(cr, cg, cb, 255), r: cr, g: cg, b: cb, a: clamp255(a) };
 }
 
-/** Cleared-screen pixel, and the two colours a frame starts from. */
-const BLACK = packColour(0, 0, 0, 255);
+/**
+ * What every pixel is before a frame's first draw: transparent black, alpha
+ * included. It shows as black through the canvas background, but a
+ * translucent draw onto it keeps a low alpha — white a=128 shows as 32, not
+ * 96 (D9 in doc/ingame-findings.md).
+ */
+const FRESH = packColour(0, 0, 0, 0);
 /** Frame-start colour. Never gamma-mapped — it is our default, not the MC's. */
 const WHITE = { packed: packColour(255, 255, 255, 255), r: 255, g: 255, b: 255, a: 255 };
 const DEFAULT_OCEAN = { packed: packColour(20, 40, 90, 255), r: 20, g: 40, b: 90, a: 255 };
@@ -521,7 +526,7 @@ function createMonitor(num, w, h, info) {
   if (!ctx) throw new Error("PhySim panel: 2D canvas context unavailable");
   const img = ctx.createImageData(w, h);
   const u32 = new Uint32Array(img.data.buffer);
-  u32.fill(BLACK);
+  u32.fill(FRESH);
   ctx.putImageData(img, 0, 0);
 
   wrapper.appendChild(label);
@@ -620,7 +625,7 @@ function scheduleRepaint() {
 
 function repaint() {
   if (monitors.size === 0) return;
-  for (const m of monitors.values()) m.u32.fill(BLACK);
+  for (const m of monitors.values()) m.u32.fill(FRESH);
   colour = WHITE;
   for (const c of lastCommands) {
     if (Array.isArray(c)) draw(c);

@@ -1,21 +1,15 @@
 // media/raster.js — the integer-grid rasterisers that replace Canvas' anti-
 // aliased path drawing.
 //
-// The reference is the game itself. test/fixtures/ingame-raster.json holds the
-// lit pixels of Stormworks monitor screenshots (tools/ingame/, Apple M5 and
-// RTX 4070Ti — identical to the pixel), and the first test replays the same
-// draw calls through raster.js and demands an exact match. Regenerate it with
-// tools/ingame/analysis/export-fixture.mjs; doc/ingame-findings.md explains
-// the rules.
-//
-// The smaller tests below pin one rule each, so a regression names the rule
-// it broke instead of just "page A4 differs". The rest check that every shape
+// The reference is the game itself: test/ingame.test.mjs replays the in-game
+// verification pages against screenshots. The tests here pin one rule each,
+// so a regression names the rule it broke instead of just "page A4 differs",
+// each tagged with the page that shows it. The rest check that every shape
 // lands on whole pixels, stays inside the screen whatever the microcontroller
 // passes, and never loops unboundedly on absurd input.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import {
   strokeLine, strokeCircle, fillCircle, strokeTriangle, fillTriangle,
   strokeRectangle, fillRectangle, circleSides
@@ -40,93 +34,6 @@ function runCollector() {
 
 /** Lit columns of one row, in plot order. */
 const cols = (c, y) => c.calls.filter(([, py]) => py === y).map(([x]) => x);
-
-// --- The game, page by page -------------------------------------------------
-
-const fixture = JSON.parse(fs.readFileSync(new URL("./fixtures/ingame-raster.json", import.meta.url), "utf8"));
-const SCREEN = { width: 96, height: 96 };
-
-/**
- * The draw calls of tools/ingame/verify{A,B,C}_*.lua, page by page. `p` plots
- * a pixel, `r` fills a run.
- * @type {Record<string, (p: (x: number, y: number) => void, r: (x: number, y: number, w: number) => void) => void>}
- */
-const PAGES = {
-  A1: (p) => strokeCircle(p, 48, 52, 22, SCREEN),
-  A2: (p) => strokeCircle(p, 48.5, 52.5, 22, SCREEN),
-  A3: (p, r) => {
-    let x = 5;
-    for (let rad = 1; rad <= 7; rad++) {
-      strokeCircle(p, x, 20, rad, SCREEN);
-      fillCircle(r, x, 44, rad, SCREEN);
-      x += rad * 2 + 3;
-    }
-    [2.4, 2.5, 2.6, 2.7, 3].forEach((rad, i) => strokeCircle(p, (i + 1) * 14 - 4, 70, rad, SCREEN));
-  },
-  A4: (p) => {
-    const f = [0, 0.25, 0.5, 0.75, -0.25];
-    f.forEach((d, i) => { const b = (i + 1) * 16 - 8; strokeLine(p, b + d, 30, b + d, 56, SCREEN); });
-    f.forEach((d, i) => { const b = (i + 1) * 6 + 54; strokeLine(p, 20, b + d, 60, b + d, SCREEN); });
-  },
-  A5: (p) => {
-    [0, 0.3, 0.5, 0.7, 0.9, 1, 1.1, 1.5, 2].forEach((len, i) => {
-      const y = (i + 1) * 6 + 10;
-      strokeLine(p, 12, y, 12 + len, y, SCREEN);
-    });
-    [[0.8, 0.8], [0.6, 0.6], [0.9, 0.4], [1.2, 0], [0.7, 0.7]].forEach(([dx, dy], i) => {
-      const y = (i + 1) * 8 + 16;
-      strokeLine(p, 62, y, 62 + dx, y + dy, SCREEN);
-    });
-  },
-  A6: (p, r) => {
-    fillTriangle(r, 6.5, 12.25, 46.75, 26.5, 18, 60.125, SCREEN);
-    strokeTriangle(p, 52, 12, 92, 26, 64, 60, SCREEN);
-    fillTriangle(r, 50, 68, 70, 68, 50, 88, SCREEN);
-    fillTriangle(r, 10.5, 68.5, 30.5, 68.5, 10.5, 88.5, SCREEN);
-  },
-  B5: (p) => {
-    for (const [x, y, w, h] of [[6, 12, 40, 30], [56, 12, 1, 30], [62, 12, 30, 1], [62, 20, 0, 10],
-      [62, 26, 1, 1], [6, 52, 20, 20], [40.5, 52.5, 20, 20], [70.25, 52, 20, 20]]) {
-      strokeRectangle(p, x, y, w, h, SCREEN);
-    }
-  },
-  B6: (_, r) => {
-    [[20, 3], [20.5, 3], [20.5, 3.5], [20.25, 3], [20.75, 3], [19.5, 3]].forEach(([x, w], i) =>
-      fillRectangle(r, x, (i + 1) * 13 + 2, w, 7, SCREEN));
-    fillRectangle(r, -0.5, 86, 4, 7, SCREEN);
-    fillRectangle(r, 60, 86, 0, 7, SCREEN);
-    fillRectangle(r, 70, 86, 0.4, 7, SCREEN);
-  },
-};
-/** The C card: one circle per quadrant. */
-const quad = (radii, fill) => (p, r) => [[25, 25], [70, 25], [25, 70], [70, 70]].forEach(([x, y], i) =>
-  fill ? fillCircle(r, x, y, radii[i], SCREEN) : strokeCircle(p, x, y, radii[i], SCREEN));
-Object.assign(PAGES, {
-  C1: quad([8, 9, 10, 11]), C2: quad([12, 13, 14, 15]), C3: quad([16, 17, 18, 19]),
-  C4: quad([20, 21, 22, 22]),
-  C7: (p) => strokeCircle(p, 48, 48, 32, SCREEN),
-  C8: (p) => strokeCircle(p, 48, 48, 44, SCREEN),
-  C9: quad([12, 13, 14, 15], true),
-});
-
-// The screenshot can't see under the ruler ticks or the page label.
-const masked = (x, y) => x < 2 || y < 2 || y >= 94 || (x >= 3 && x <= 16 && y >= 3 && y <= 8);
-
-for (const [page, runs] of Object.entries(fixture.pages)) {
-  test(`in game: page ${page} matches the screenshot pixel for pixel`, () => {
-    assert.ok(PAGES[page], `no draw calls for page ${page}`);
-    const want = new Set();
-    for (const [y, x0, x1] of runs) for (let x = x0; x <= x1; x++) want.add(`${x},${y}`);
-    const got = new Set();
-    const plot = (x, y) => {
-      if (x >= 0 && y >= 0 && x < SCREEN.width && y < SCREEN.height && !masked(x, y)) got.add(`${x},${y}`);
-    };
-    PAGES[page](plot, (x, y, w) => { for (let i = 0; i < w; i++) plot(x + i, y); });
-    const missing = [...want].filter(k => !got.has(k));
-    const extra = [...got].filter(k => !want.has(k));
-    assert.deepEqual({ missing, extra }, { missing: [], extra: [] });
-  });
-}
 
 // --- One rule per test ------------------------------------------------------
 
@@ -173,6 +80,37 @@ test("strokeLine: a half-integer rounds down the screen in y and left in x (A4)"
     strokeLine(c.plot, 10 + Number(f), 2, 10 + Number(f), 12, BOUNDS);
     assert.ok(c.calls.length > 0 && c.calls.every(([x]) => x === want), `x + ${f}`);
   }
+});
+
+test("strokeLine: endpoints are snapped to 1/256px, so 1/1024 off a tie is the tie (D6)", () => {
+  const e = 1 / 1024;
+  for (const [a, b] of [[[10, 10.5, 14, 10.5], [10 + e, 10.5, 14 + e, 10.5]],
+    [[10.5, 10, 10.5, 14], [10.5 + e, 10, 10.5 + e, 14]],
+    [[10, 10, 10.5, 10], [10, 10, 10.5 - e, 10]]]) {
+    const tie = collector(), near = collector();
+    strokeLine(tie.plot, ...a, BOUNDS);
+    strokeLine(near.plot, ...b, BOUNDS);
+    assert.deepEqual(near.set, tie.set, `${b}`);
+  }
+});
+
+test("strokeLine: the diamond owns some corners — top for x-major, top and right for y-major (D7)", () => {
+  // Pixel (4,10)'s diamond has its top corner at (4, 9.5). A vertical line
+  // leaving from there lights it; one leaving from the bottom corner doesn't.
+  const up = collector();
+  strokeLine(up.plot, 4, 9.5, 4, 5.5, BOUNDS);
+  assert.ok(up.set.has("4,10"));
+  const down = collector();
+  strokeLine(down.plot, 4, 10.5, 4, 14.5, BOUNDS);
+  assert.ok(!down.set.has("4,10"));
+});
+
+test("strokeLine: ending on a diamond's edge counts as leaving it (D4)", () => {
+  // (12.25, 19.25) sits on the lower-right edge of pixel (12,19)'s diamond,
+  // not on a corner: a line arriving there through the diamond lights it.
+  const c = collector();
+  strokeLine(c.plot, 11.5, 18.5, 12.25, 19.25, BOUNDS);
+  assert.ok(c.set.has("12,19"));
 });
 
 test("strokeLine: off-screen endpoints are clipped, not walked", () => {
@@ -273,6 +211,16 @@ test("strokeRectangle: spans w+1 by h+1, and a zero width still draws (B5)", () 
   strokeRectangle(z.plot, 4, 20, 0, 10, { width: 32, height: 40 });
   assert.deepEqual([...z.set].map(k => Number(k.split(",")[1])).sort((a, b) => a - b),
     Array.from({ length: 11 }, (_, i) => 20 + i));
+});
+
+test("fillRectangle: rows floor(y)..floor(y+h)-1, like drawTriangleF (D7)", () => {
+  for (const [y, h, want] of [[20, 6.5, [20, 25]], [20.25, 6.5, [20, 25]], [20.5, 6.5, [20, 26]],
+    [20.75, 6.5, [20, 26]], [26, -6, [20, 25]]]) {
+    const c = runCollector();
+    fillRectangle(c.fillRun, 2, y, 3, h, { width: 32, height: 40 });
+    const rows = [...new Set(c.calls.map(([, py]) => py))];
+    assert.deepEqual([Math.min(...rows), Math.max(...rows)], want, `y=${y} h=${h}`);
+  }
 });
 
 test("fillRectangle: columns ceil(x)..ceil(x+w)-1 (B6)", () => {

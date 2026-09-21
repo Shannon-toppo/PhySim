@@ -35,7 +35,8 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `simulatorLuaPatch.test.mjs` — the `_simulator.lua` surgery: injection order (FS shim before `createSandbox`, socket after), the exe-launch suppression, idempotence, and the "upstream changed the template" cases that must warn instead of guessing.
 - `trail.test.mjs` — `media/trail.js`: the trail buffer keeps the newest points in draw order, drops sub-millimetre samples, survives a capacity change, and the velocity-arrow length stays inside the scene for any speed.
 - `blend.test.mjs` — `media/blend.js`: packed words really are R,G,B,A in memory order (get this backwards and every monitor colour comes out with red and blue swapped), and blending reproduces the game's measured values (alpha blended too, shown as rgb × alpha).
-- `raster.test.mjs` — `media/raster.js`: **replays the in-game verification pages against `test/fixtures/ingame-raster.json`** (lit pixels from real Stormworks screenshots — see "Monitor rasterising" below), one test per rule, plus the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
+- `ingame.test.mjs` — **the monitor against the real game**: runs each page of `tools/ingame/verify*.lua` (fengari, `test/helpers/cardRunner.mjs`) through `raster.js` + `pixelFont.js` and compares with `test/fixtures/ingame-raster.json`, lit pixels from Stormworks screenshots. See "Monitor rasterising" below.
+- `raster.test.mjs` — `media/raster.js`: one test per rasterising rule (each tagged with the page that shows it), plus the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
 - `monitorConfig.test.mjs` — `media/monitorConfig.js`: the size table round-trips through pixels in both orientations, `nextScreenNumber` reuses a removed slot, and `fitScale` picks one factor for all monitors (and never 0).
 - `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, and the tick/send de-duplication.
 - `csvLogger.test.mjs` — `src/csvLogger.ts`: CRLF records, rows arriving with no log open, a row smuggling its own newline, truncate-on-start, and an end-to-end pass where webview-shaped batches parse back as one table.
@@ -191,33 +192,40 @@ v1.15.23; Apple M5 and RTX 4070Ti give identical pixels), not to any other
 implementation. `doc/ingame-findings.md` has the evidence. The monitor is
 plain GPU rasterisation, and four of its rules look like bugs and are not:
 
-- **Lines use the diamond-exit rule.** Pixel (px, py) owns the open diamond
-  around the *integer* point (px, py) in script coordinates, and is lit when
-  the segment leaves it. So the end pixel is never drawn, a 0.5px line lights
-  one pixel and a 0.3px line none, and the direction matters. A point exactly
-  on a diamond's edge goes by nudging the line along its minor axis — down for
-  x-major, left for y-major — which is why a half-integer y lands on the lower
-  row but a half-integer x on the left column.
+- **Lines use the diamond-exit rule** on 1/256px-snapped endpoints. Pixel
+  (px, py) owns the diamond around the *integer* point (px, py) in script
+  coordinates, and is lit when the segment touches it without ending inside
+  it. So the end pixel is never drawn, a 0.5px line lights one pixel and a
+  0.3px line none, and the direction matters. The diamond is **half-open**:
+  its edges are outside, an x-major line's diamond owns only its top corner,
+  a y-major line's its top and right corners (`X_MAJOR_CORNERS` /
+  `Y_MAJOR_CORNERS`). That table is why a half-integer y lands on the lower
+  row but a half-integer x on the left column. It was the only corner
+  assignment out of 512 that fits every page.
 - **A circle is an N-gon, N = clamp(floor(r/2), 8, 16)**, starting at angle 0.
   Small circles are octagons (r=3 only *happens* to match a midpoint circle);
   r=22 is an 11-gon, which is why it is not left-right symmetric.
-- **drawTriangleF samples each pixel at its bottom-left corner**; drawCircleF
-  and drawRectF at the top-left. Both nudge x right on an exact edge. There is
-  no single offset that fits triangles and circles — do not "unify" them.
+- **drawTriangleF and drawRectF sample each pixel at its bottom-left corner**;
+  drawCircleF at the top-left. So drawRectF's columns are ceil(x).. but its
+  rows floor(y).. . There is no single offset that fits triangles and
+  circles — do not "unify" them.
 - **drawRect is four lines**, so it covers (w+1)×(h+1) pixels, and a zero
   width still draws.
 
-Ties are carried symbolically (`minEps` in `strokeLine`, the `ySign` rules in
-`fillConvex`), not by adding an epsilon to the coordinates — that would
-vanish at ±1e9.
+`strokeLine` works in integers of 1/256px so every tie is exact; endpoints
+beyond ±65536px are clipped first to keep the products inside 2^53. Fill ties
+are carried symbolically (the `ySign` rules in `fillConvex`), not by adding
+an epsilon to the coordinates.
 
-`test/raster.test.mjs` replays the verification cards' draw calls and
-compares against `test/fixtures/ingame-raster.json`, the lit pixels of 15
-screenshot pages. To extend it, add a page to `tools/ingame/verify*.lua`, shoot
-it on the monitor, convert to PNG (`sips -s format png`) and run
-`tools/ingame/analysis/export-fixture.mjs <macDir> <winDir> <out.json>`; it
-refuses a page whose calibration residual is over 0.05px or whose two
-platforms disagree.
+`test/ingame.test.mjs` runs each verification card page (the `.lua` file
+itself, in fengari via `test/helpers/cardRunner.mjs`) through `raster.js` and
+`pixelFont.js` and compares against `test/fixtures/ingame-raster.json`, the
+lit pixels of 27 screenshot pages. To extend it, add a page to
+`tools/ingame/verify*.lua`, shoot it on the monitor, convert to PNG
+(`sips -s format png`), add it to `PAGES` in
+`tools/ingame/analysis/export-fixture.mjs` and run it
+(`<macDir> <winDir> <out.json>`); it refuses a page whose calibration
+residual is over 0.05px or whose two platforms disagree.
 
 Storm Code's `screen_raster.rs` (`storm-lua-runner`) was the reference before
 the screenshots and is **wrong on lines, circle side counts and fill edges** —
@@ -226,8 +234,9 @@ don't port from it again.
 Compositing, the font and TEXTBOX follow the game too (see
 `doc/ingame-findings.md`): `blend.js` applies the blend weights to **alpha as
 well**, and the monitor shows rgb × alpha — the `.monitor-canvas` black
-background does that multiplication, so keep it black. CLEAR replaces the
-buffer with the colour *and* its alpha. `plotter()` does not de-duplicate:
+background does that multiplication, so keep it black. A frame starts from
+transparent black (0,0,0,0), not opaque, and CLEAR replaces the buffer with
+the colour *and* its alpha. `plotter()` does not de-duplicate:
 overlapping edges double-blend in the game as well. TEXTBOX wraps by
 character count and keeps its spaces (`pixelFont.js:wrapTextBox`).
 

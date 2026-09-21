@@ -5,6 +5,7 @@ CLAUDE.md
 doc/**
 src/**
 scripts/**
+tools/**
 test/**
 node_modules/**
 **/tsconfig.json

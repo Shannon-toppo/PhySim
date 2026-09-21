@@ -34,7 +34,7 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - Lua runs inside **fengari** (Lua 5.3 semantics in pure JS — same major version as lua-debug) via `test/helpers/luaRunner.mjs`, which stubs `_physim_socket` and drives `PhySim._buf` directly. No system Lua install needed.
 - `simulatorLuaPatch.test.mjs` — the `_simulator.lua` surgery: injection order (FS shim before `createSandbox`, socket after), the exe-launch suppression, idempotence, and the "upstream changed the template" cases that must warn instead of guessing.
 - `trail.test.mjs` — `media/trail.js`: the trail buffer keeps the newest points in draw order, drops sub-millimetre samples, survives a capacity change, and the velocity-arrow length stays inside the scene for any speed.
-- `blend.test.mjs` — `media/blend.js`: packed words really are R,G,B,A in memory order (get this backwards and every monitor colour comes out with red and blue swapped), and blending is an exact lerp that doesn't drift over repeated draws.
+- `blend.test.mjs` — `media/blend.js`: packed words really are R,G,B,A in memory order (get this backwards and every monitor colour comes out with red and blue swapped), and blending reproduces the game's measured values (alpha blended too, shown as rgb × alpha).
 - `raster.test.mjs` — `media/raster.js`: **replays the in-game verification pages against `test/fixtures/ingame-raster.json`** (lit pixels from real Stormworks screenshots — see "Monitor rasterising" below), one test per rule, plus the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
 - `monitorConfig.test.mjs` — `media/monitorConfig.js`: the size table round-trips through pixels in both orientations, `nextScreenNumber` reuses a removed slot, and `fitScale` picks one factor for all monitors (and never 0).
 - `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, and the tick/send de-duplication.
@@ -80,8 +80,8 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
    - `trail.js` — **trail ring buffer + arrow scaling, pure module** (no DOM/three) so `test/trail.test.mjs` runs it in Node. The buffer shifts rather than wraps: the vertex order must equal the draw order or the line draws a stray segment across the seam.
    - `mcScreen.js` — microcontroller monitor rendering (always on macOS, opt-in on Windows); draws `SimStubServer`'s forwarded screen config/draw commands and relays touch input back. Handles **any number of screens** — one `<canvas>` each, all at one shared zoom factor. See "Monitor colours" below before touching `makeColour()`, "Monitor rendering cost" before making it draw through the canvas 2D API again, and "Multiple monitors" before touching the screen controls.
    - `monitorConfig.js` — **monitor sizes, screen-number allocation and the shared fit scale, pure module** (no DOM/canvas) so `test/monitorConfig.test.mjs` runs it in Node. `SimStubServer` validates independently — a webview message is untrusted — and `test/simstub.test.mjs` checks the host accepts everything the dropdown offers.
-   - `blend.js` — **colour packing + source-over blending, pure module** (no DOM/canvas) so `test/blend.test.mjs` runs it in Node. Owns the endianness probe that decides how RGBA bytes pack into an ImageData word.
-   - `pixelFont.js` — the hand-drawn 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush).
+   - `blend.js` — **colour packing + the game's 4-channel blending, pure module** (no DOM/canvas) so `test/blend.test.mjs` runs it in Node. Owns the endianness probe that decides how RGBA bytes pack into an ImageData word.
+   - `pixelFont.js` — the 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush), glyphs read off in-game screenshots where available, plus TEXTBOX wrapping/placement (`wrapTextBox` / `layoutTextBox`).
    - `raster.js` — **integer-grid line/circle/triangle/rectangle rasterisers, pure module** (no DOM/canvas — the target is a `plot`/`fillRun` callback) so `test/raster.test.mjs` can run them in Node. Canvas path drawing anti-aliases, which the integer CSS upscale magnifies into a visible haze; Stormworks monitors have no AA. Every rasteriser clips to the screen, so a microcontroller passing ±1e9 coordinates can't hang the panel. The rules are fitted to in-game screenshots — see "Monitor rasterising" below before changing any of them.
    Coordinate convention is **Stormworks left-handed (X+ East, Y+ Up, Z+ North)** — three.js itself is right-handed, so the camera is positioned to make `+Z` look like "into the screen / north" without any scene-level flipping. The modules are vanilla JS with JSDoc types, checked by `npm run check:media` (strict).
 
@@ -223,10 +223,13 @@ Storm Code's `screen_raster.rs` (`storm-lua-runner`) was the reference before
 the screenshots and is **wrong on lines, circle side counts and fill edges** —
 don't port from it again.
 
-Still divergent, all listed in `doc/ingame-findings.md`: compositing
-(`blend.js` is src-over; the game blends alpha too and shows rgb×a), the font
-and TEXTBOX wrapping, and `plotter()` de-duplicating overlapping edges within
-one shape where the game double-blends them.
+Compositing, the font and TEXTBOX follow the game too (see
+`doc/ingame-findings.md`): `blend.js` applies the blend weights to **alpha as
+well**, and the monitor shows rgb × alpha — the `.monitor-canvas` black
+background does that multiplication, so keep it black. CLEAR replaces the
+buffer with the colour *and* its alpha. `plotter()` does not de-duplicate:
+overlapping edges double-blend in the game as well. TEXTBOX wraps by
+character count and keeps its spaces (`pixelFont.js:wrapTextBox`).
 
 ## Monitor rendering cost
 

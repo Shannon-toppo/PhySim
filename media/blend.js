@@ -1,4 +1,4 @@
-// Colour packing and source-over blending for the monitor pixel buffers —
+// Colour packing and blending for the monitor pixel buffers —
 // pure module (no DOM, no canvas) so test/blend.test.mjs can run it in Node.
 //
 // media/mcScreen.js draws into an ImageData through a Uint32Array view rather
@@ -44,13 +44,16 @@ export function unpackChannel(word, channel) {
 }
 
 /**
- * Source-over blend of a translucent colour onto an opaque destination.
+ * Blend a translucent colour into the buffer the way the game does: the same
+ * SRC_ALPHA / ONE_MINUS_SRC_ALPHA weights on all four channels, alpha
+ * included. So a translucent draw also lowers the pixel's alpha
+ * (a·a + dst.a·(1−a)), and the monitor shows rgb × alpha — the panel's canvas
+ * sits on black, which does that multiplication for free. White at a=128 on
+ * black shows as 96, not 128, and restacking it levels off at 128 instead of
+ * climbing to 255; doc/ingame-findings.md has the measurements.
  *
- * The monitor buffer is cleared to opaque black every frame and only ever
- * written by this module, so the destination alpha is always 255 and the
- * result stays opaque — which reduces the general source-over formula to a
- * plain lerp per channel. `+ 127` rounds instead of truncating, so a stack of
- * translucent draws doesn't drift dark.
+ * `+ 127` rounds instead of truncating, so a stack of translucent draws
+ * doesn't drift dark.
  *
  * @param {number} dst packed destination pixel
  * @param {number} r 0-255 @param {number} g 0-255 @param {number} b 0-255
@@ -62,10 +65,11 @@ export function blendPixel(dst, r, g, b, a) {
   const dr = (dst >>> R_SHIFT) & 255;
   const dg = (dst >>> G_SHIFT) & 255;
   const db = (dst >>> B_SHIFT) & 255;
+  const da = (dst >>> A_SHIFT) & 255;
   return packColour(
     (r * a + dr * ia + 127) / 255 | 0,
     (g * a + dg * ia + 127) / 255 | 0,
     (b * a + db * ia + 127) / 255 | 0,
-    255
+    (a * a + da * ia + 127) / 255 | 0
   );
 }

@@ -51,7 +51,7 @@ import {
   SCREEN_SIZES, DEFAULT_SIZE, MAX_SCREENS, nextScreenNumber, pixelsToSize, fitScale
 } from "./monitorConfig.js";
 import {
-  drawPixelText, measurePixelText, measurePixelBlockHeight, LINE_HEIGHT
+  drawPixelText, layoutTextBox
 } from "./pixelFont.js";
 import {
   strokeLine, strokeCircle, fillCircle, strokeTriangle, fillTriangle,
@@ -135,8 +135,8 @@ function unGamma(c) {
 /**
  * A draw colour resolved for the pixel buffer. `packed` is the ready-to-store
  * word for the common opaque case; the channels are kept for the blend path.
- * The packed word always carries alpha 255 — the buffer is opaque, and the
- * source alpha in `a` is what blendPixel() weighs the colour by.
+ * The packed word carries alpha 255 — the source alpha in `a` is what
+ * blendPixel() weighs the colour by, and what CLEAR stores as it is.
  * @typedef {object} Colour
  * @property {number} packed
  * @property {number} r
@@ -656,7 +656,10 @@ function draw(c) {
 
   switch (cmd) {
     case "CLEAR":
-      fillRect(m, 0, 0, canvas.width, canvas.height);
+      // Replaces, whatever the alpha: the buffer takes the colour and its
+      // alpha as they are, and the black behind the canvas shows through
+      // (B4 in doc/ingame-findings.md).
+      m.u32.fill(packColour(colour.r, colour.g, colour.b, colour.a));
       return;
 
     case "MAP":
@@ -694,7 +697,7 @@ function draw(c) {
     }
 
     case "TEXT": {
-      drawPixelText(pixelSetter(m), String(c[4] ?? ""), Math.round(n(c[2])), Math.round(n(c[3])));
+      drawPixelText(pixelSetter(m), String(c[4] ?? ""), n(c[2]), n(c[3]));
       return;
     }
 
@@ -747,18 +750,11 @@ function fillRect(m, x, y, w, h, col = colour) {
 }
 
 /**
- * A pixel plotter for raster.js. A closed outline never revisits a pixel —
- * a diamond-exit edge leaves its end vertex to the next edge — but edges that
- * lie on top of each other do: a zero-width drawRect is the same line drawn
- * down and back up. The game double-blends those (B5 in
- * doc/ingame-findings.md); keeping them single here is a deliberate
- * difference, visible only on a translucent, degenerate outline.
- *
- * An opaque store is idempotent, so that case skips the de-duplication (and
- * its per-shape Set) entirely: measured 1.7x faster on a mixed frame and 3.5x on an outline-heavy
- * one. The translucent path keeps a Set per shape; outlines are O(perimeter),
- * so it stays small. doc/monitor-dedup-plan.md has the measurements and the
- * plan for replacing that Set with a stamp buffer.
+ * A pixel plotter for raster.js. Every call is one draw: where a shape's edges
+ * lie on top of each other (a zero-width drawRect is the same line down and
+ * back up) a translucent colour blends twice, as it does in the game (B5 in
+ * doc/ingame-findings.md). A closed outline never revisits a pixel, so
+ * nothing else is affected.
  * @param {Monitor} m
  * @returns {import("./raster.js").Plot}
  */
@@ -772,19 +768,16 @@ function plotter(m) {
       u32[y * width + x] = packed;
     };
   }
-  const seen = new Set();
   return (x, y) => {
     if (x < 0 || y < 0 || x >= width || y >= height) return;
     const i = y * width + x;
-    if (seen.has(i)) return;
-    seen.add(i);
     u32[i] = blendPixel(u32[i], col.r, col.g, col.b, col.a);
   };
 }
 
 /**
  * Horizontal-run painter for the filled rasterisers. Runs never overlap, so
- * unlike plotter() this needs no de-duplication — just clipping.
+ * this needs nothing but clipping.
  * @param {Monitor} m
  * @returns {import("./raster.js").FillRun}
  */
@@ -820,9 +813,8 @@ function pixelSetter(m) {
 
 /**
  * hAlign/vAlign are -1/0/1 → left|centre|right and top|middle|bottom, aligned
- * within the box rather than against the screen edges. Alignment is computed
- * from the bitmap font's own metrics (each line measured independently) and
- * rounded to whole pixels so glyphs land on the pixel grid.
+ * within the box. Wrapping and placement live in pixelFont.js's
+ * layoutTextBox(), which follows the game's character-count wrap.
  * @param {Monitor} m
  * @param {number} x @param {number} y @param {number} w @param {number} h
  * @param {number} hAlign @param {number} vAlign
@@ -830,19 +822,8 @@ function pixelSetter(m) {
  */
 function drawTextbox(m, x, y, w, h, hAlign, vAlign, text) {
   const setPixel = pixelSetter(m);
-  const lines = text.split("\n");
-  const blockH = measurePixelBlockHeight(lines.length);
-
-  let top = y;
-  if (vAlign === 0) top = y + (h - blockH) / 2;
-  else if (vAlign > 0) top = y + h - blockH;
-
-  for (let i = 0; i < lines.length; i++) {
-    const lineW = measurePixelText(lines[i]);
-    let left = x;
-    if (hAlign === 0) left = x + (w - lineW) / 2;
-    else if (hAlign > 0) left = x + w - lineW;
-    drawPixelText(setPixel, lines[i], Math.round(left), Math.round(top + i * LINE_HEIGHT));
+  for (const line of layoutTextBox(text, x, y, w, h, hAlign, vAlign)) {
+    drawPixelText(setPixel, line.text, line.x, line.y);
   }
 }
 

@@ -35,7 +35,7 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `simulatorLuaPatch.test.mjs` — the `_simulator.lua` surgery: injection order (FS shim before `createSandbox`, socket after), the exe-launch suppression, idempotence, and the "upstream changed the template" cases that must warn instead of guessing.
 - `trail.test.mjs` — `media/trail.js`: the trail buffer keeps the newest points in draw order, drops sub-millimetre samples, survives a capacity change, and the velocity-arrow length stays inside the scene for any speed.
 - `blend.test.mjs` — `media/blend.js`: packed words really are R,G,B,A in memory order (get this backwards and every monitor colour comes out with red and blue swapped), and blending is an exact lerp that doesn't drift over repeated draws.
-- `raster.test.mjs` — `media/raster.js`: exact pixel sets for axis-aligned and 45° lines, circle symmetry, triangle coverage, and the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
+- `raster.test.mjs` — `media/raster.js`: **replays the in-game verification pages against `test/fixtures/ingame-raster.json`** (lit pixels from real Stormworks screenshots — see "Monitor rasterising" below), one test per rule, plus the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
 - `monitorConfig.test.mjs` — `media/monitorConfig.js`: the size table round-trips through pixels in both orientations, `nextScreenNumber` reuses a removed slot, and `fitScale` picks one factor for all monitors (and never 0).
 - `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, and the tick/send de-duplication.
 - `csvLogger.test.mjs` — `src/csvLogger.ts`: CRLF records, rows arriving with no log open, a row smuggling its own newline, truncate-on-start, and an end-to-end pass where webview-shaped batches parse back as one table.
@@ -82,7 +82,7 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
    - `monitorConfig.js` — **monitor sizes, screen-number allocation and the shared fit scale, pure module** (no DOM/canvas) so `test/monitorConfig.test.mjs` runs it in Node. `SimStubServer` validates independently — a webview message is untrusted — and `test/simstub.test.mjs` checks the host accepts everything the dropdown offers.
    - `blend.js` — **colour packing + source-over blending, pure module** (no DOM/canvas) so `test/blend.test.mjs` runs it in Node. Owns the endianness probe that decides how RGBA bytes pack into an ImageData word.
    - `pixelFont.js` — the hand-drawn 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush).
-   - `raster.js` — **integer-grid line/circle/triangle rasterisers, pure module** (no DOM/canvas — the target is a `plot`/`fillRun` callback) so `test/raster.test.mjs` can run them in Node. Canvas path drawing anti-aliases, which the integer CSS upscale magnifies into a visible haze; Stormworks monitors have no AA. Every rasteriser clips to the screen, so a microcontroller passing ±1e9 coordinates can't hang the panel.
+   - `raster.js` — **integer-grid line/circle/triangle/rectangle rasterisers, pure module** (no DOM/canvas — the target is a `plot`/`fillRun` callback) so `test/raster.test.mjs` can run them in Node. Canvas path drawing anti-aliases, which the integer CSS upscale magnifies into a visible haze; Stormworks monitors have no AA. Every rasteriser clips to the screen, so a microcontroller passing ±1e9 coordinates can't hang the panel. The rules are fitted to in-game screenshots — see "Monitor rasterising" below before changing any of them.
    Coordinate convention is **Stormworks left-handed (X+ East, Y+ Up, Z+ North)** — three.js itself is right-handed, so the camera is positioned to make `+Z` look like "into the screen / north" without any scene-level flipping. The modules are vanilla JS with JSDoc types, checked by `npm run check:media` (strict).
 
 2. **`src/`** — the extension host.
@@ -183,6 +183,50 @@ In the panel every monitor is drawn at **one shared zoom factor**, fit
 included. Fitting each one to the column separately would scale a 1x1 by 8 and
 a 3x3 by 2, so the small monitor would draw larger than the big one. Fit is
 bounded by width only, as it has always been; tall layouts scroll.
+
+## Monitor rasterising (read before changing a shape)
+
+`media/raster.js` is fitted to **screenshots of the real game** (Stormworks
+v1.15.23; Apple M5 and RTX 4070Ti give identical pixels), not to any other
+implementation. `doc/ingame-findings.md` has the evidence. The monitor is
+plain GPU rasterisation, and four of its rules look like bugs and are not:
+
+- **Lines use the diamond-exit rule.** Pixel (px, py) owns the open diamond
+  around the *integer* point (px, py) in script coordinates, and is lit when
+  the segment leaves it. So the end pixel is never drawn, a 0.5px line lights
+  one pixel and a 0.3px line none, and the direction matters. A point exactly
+  on a diamond's edge goes by nudging the line along its minor axis — down for
+  x-major, left for y-major — which is why a half-integer y lands on the lower
+  row but a half-integer x on the left column.
+- **A circle is an N-gon, N = clamp(floor(r/2), 8, 16)**, starting at angle 0.
+  Small circles are octagons (r=3 only *happens* to match a midpoint circle);
+  r=22 is an 11-gon, which is why it is not left-right symmetric.
+- **drawTriangleF samples each pixel at its bottom-left corner**; drawCircleF
+  and drawRectF at the top-left. Both nudge x right on an exact edge. There is
+  no single offset that fits triangles and circles — do not "unify" them.
+- **drawRect is four lines**, so it covers (w+1)×(h+1) pixels, and a zero
+  width still draws.
+
+Ties are carried symbolically (`minEps` in `strokeLine`, the `ySign` rules in
+`fillConvex`), not by adding an epsilon to the coordinates — that would
+vanish at ±1e9.
+
+`test/raster.test.mjs` replays the verification cards' draw calls and
+compares against `test/fixtures/ingame-raster.json`, the lit pixels of 15
+screenshot pages. To extend it, add a page to `tools/ingame/verify*.lua`, shoot
+it on the monitor, convert to PNG (`sips -s format png`) and run
+`tools/ingame/analysis/export-fixture.mjs <macDir> <winDir> <out.json>`; it
+refuses a page whose calibration residual is over 0.05px or whose two
+platforms disagree.
+
+Storm Code's `screen_raster.rs` (`storm-lua-runner`) was the reference before
+the screenshots and is **wrong on lines, circle side counts and fill edges** —
+don't port from it again.
+
+Still divergent, all listed in `doc/ingame-findings.md`: compositing
+(`blend.js` is src-over; the game blends alpha too and shows rgb×a), the font
+and TEXTBOX wrapping, and `plotter()` de-duplicating overlapping edges within
+one shape where the game double-blends them.
 
 ## Monitor rendering cost
 

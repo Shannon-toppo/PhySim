@@ -54,7 +54,8 @@ import {
   drawPixelText, measurePixelText, measurePixelBlockHeight, LINE_HEIGHT
 } from "./pixelFont.js";
 import {
-  strokeLine, strokeCircle, fillCircle, strokeTriangle, fillTriangle
+  strokeLine, strokeCircle, fillCircle, strokeTriangle, fillTriangle,
+  strokeRectangle, fillRectangle
 } from "./raster.js";
 import { packColour, blendPixel } from "./blend.js";
 
@@ -670,29 +671,17 @@ function draw(c) {
     case "CIRCLE": {
       const fill = n(c[2]) === 1;
       if (fill) fillCircle(runner(m), n(c[3]), n(c[4]), n(c[5]), canvas);
-      else strokeCircle(plotter(m), n(c[3]), n(c[4]), n(c[5]));
+      else strokeCircle(plotter(m), n(c[3]), n(c[4]), n(c[5]), canvas);
       return;
     }
 
     case "RECT": {
-      // Snapped to whole pixels: the microcontroller is free to pass fractional
-      // coordinates, and fillRect would anti-alias those into grey edges.
+      // The game's outline is four lines, so it spans w+1 by h+1 pixels —
+      // not the w by h a filled rectangle covers.
       const fill = n(c[2]) === 1;
-      const x0 = Math.round(n(c[3])), y0 = Math.round(n(c[4]));
-      const x1 = Math.round(n(c[3]) + n(c[5])), y1 = Math.round(n(c[4]) + n(c[6]));
-      const w = x1 - x0, h = y1 - y0;
-      if (fill) {
-        fillRect(m, x0, y0, w, h);
-      } else if (w > 0 && h > 0) {
-        // Four 1px runs rather than an outline pass, so the corners aren't
-        // drawn twice (which would double-blend a translucent colour).
-        fillRect(m, x0, y0, w, 1);
-        if (h > 1) fillRect(m, x0, y1 - 1, w, 1);
-        if (h > 2) {
-          fillRect(m, x0, y0 + 1, 1, h - 2);
-          if (w > 1) fillRect(m, x1 - 1, y0 + 1, 1, h - 2);
-        }
-      }
+      const v = [n(c[3]), n(c[4]), n(c[5]), n(c[6])];
+      if (fill) fillRectangle(runner(m), v[0], v[1], v[2], v[3], canvas);
+      else strokeRectangle(plotter(m), v[0], v[1], v[2], v[3], canvas);
       return;
     }
 
@@ -758,12 +747,15 @@ function fillRect(m, x, y, w, h, col = colour) {
 }
 
 /**
- * A pixel plotter for raster.js. The rasterisers can revisit a pixel (the
- * circle's eight-way symmetry meets on the axes, a triangle's edges meet at
- * its corners), which matters only for a translucent colour — painting one
- * twice would double-blend it into a brighter dot. An opaque store is
- * idempotent, so that case skips the de-duplication (and its per-shape Set)
- * entirely: measured 1.7x faster on a mixed frame and 3.5x on an outline-heavy
+ * A pixel plotter for raster.js. A closed outline never revisits a pixel —
+ * a diamond-exit edge leaves its end vertex to the next edge — but edges that
+ * lie on top of each other do: a zero-width drawRect is the same line drawn
+ * down and back up. The game double-blends those (B5 in
+ * doc/ingame-findings.md); keeping them single here is a deliberate
+ * difference, visible only on a translucent, degenerate outline.
+ *
+ * An opaque store is idempotent, so that case skips the de-duplication (and
+ * its per-shape Set) entirely: measured 1.7x faster on a mixed frame and 3.5x on an outline-heavy
  * one. The translucent path keeps a Set per shape; outlines are O(perimeter),
  * so it stays small. doc/monitor-dedup-plan.md has the measurements and the
  * plan for replacing that Set with a stamp buffer.

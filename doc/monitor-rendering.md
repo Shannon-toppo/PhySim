@@ -602,7 +602,8 @@ PNG に変換し（`sips -s format png`）、`export-fixture.mjs` の `PAGES` �
 
 ## 9. 分かっていないこと
 
-次は測っていない。
+次は測っていない。画面の大きさと負の半径は、検証カード E
+（`tools/ingame/verifyE_sizes.lua`）で測る。撮影はまだ。
 
 - **drawMap** とその関連（`setMapColor*`）。
 - **96×96 以外の画面サイズ。** カードはすべて 3×3 モニター（96×96）で撮った。

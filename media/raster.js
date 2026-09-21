@@ -221,20 +221,24 @@ export function strokeLine(plot, x1, y1, x2, y2, bounds) {
  * How many sides the game gives a circle of radius r: 8 up to r=17, one more
  * per 2px of radius, capped at 16 from r=32. Fitted over r=1..22, 32 and 44;
  * the cap is 16 (D2: r=34/38/42 are all 16-gons) and a fractional radius is
- * floored (D3: r=17.5 and 19.5 give 8 and 9 sides).
+ * floored (D3: r=17.5 and 19.5 give 8 and 9 sides). A negative radius counts
+ * as its magnitude (E5-E7: r=-22 is the same 11-gon as r=22).
  * @param {number} r
  */
 export function circleSides(r) {
-  return Math.min(16, Math.max(8, Math.floor(r / 2)));
+  return Math.min(16, Math.max(8, Math.floor(Math.abs(r) / 2)));
 }
 
 /**
- * The circle's polygon, starting at angle 0 (due right). `Math.fround`
- * mirrors the game's 32-bit vertices.
+ * The circle's polygon, starting at angle 0 (due right). A negative radius
+ * draws exactly the circle of its magnitude, vertices included — r=-22's
+ * 11-gon points right like r=22's, not left (E5-E7). `Math.fround` mirrors
+ * the game's 32-bit vertices.
  * @param {number} cx @param {number} cy @param {number} r
  * @returns {[number, number][]}
  */
 function circlePolygon(cx, cy, r) {
+  r = Math.abs(r);
   const n = circleSides(r);
   const pts = /** @type {[number, number][]} */ ([]);
   for (let i = 0; i < n; i++) {

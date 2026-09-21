@@ -128,7 +128,7 @@ test("strokeLine: off-screen endpoints are clipped, not walked", () => {
 });
 
 test("circleSides: 8 up to r=17, one more per 2px, 16 from r=32 (C1-C8)", () => {
-  const want = { 1: 8, 7: 8, 15.75: 8, 17: 8, 18: 9, 19: 9, 20: 10, 21: 10, 22: 11, 32: 16, 44: 16, 1e9: 16 };
+  const want = { 1: 8, 7: 8, 15.75: 8, 17: 8, 18: 9, 19: 9, 20: 10, 21: 10, 22: 11, 32: 16, 44: 16, 1e9: 16, [-19]: 9 };
   for (const [r, n] of Object.entries(want)) assert.equal(circleSides(Number(r)), n, `r=${r}`);
 });
 
@@ -144,6 +144,23 @@ test("strokeCircle: a small circle is an octagon, and still draws (A3)", () => {
   strokeCircle(three.plot, 16, 16, 3, BOUNDS);
   assert.equal(three.calls.length, 16);
   assert.equal(three.set.size, 16);
+});
+
+test("circles: a negative radius draws the circle of its magnitude (E5-E7)", () => {
+  // r=-22 is an 11-gon, so drawing it with vertices at -r would point it
+  // left instead of right; the game draws it exactly like r=22.
+  assert.equal(circleSides(-22), 11);
+  const big = { width: 96, height: 96 };
+  for (const r of [-22, -19, -3]) {
+    const neg = collector(), pos = collector();
+    strokeCircle(neg.plot, 48, 48, r, big);
+    strokeCircle(pos.plot, 48, 48, -r, big);
+    assert.deepEqual(neg.set, pos.set, `outline r=${r}`);
+    const negF = runCollector(), posF = runCollector();
+    fillCircle(negF.fillRun, 48, 48, r, big);
+    fillCircle(posF.fillRun, 48, 48, -r, big);
+    assert.deepEqual(negF.set, posF.set, `fill r=${r}`);
+  }
 });
 
 test("strokeCircle: an absurd radius stays bounded", () => {

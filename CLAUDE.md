@@ -205,7 +205,8 @@ plain GPU rasterisation, and four of its rules look like bugs and are not:
   assignment out of 512 that fits every page.
 - **A circle is an N-gon, N = clamp(floor(r/2), 8, 16)**, starting at angle 0.
   Small circles are octagons (r=3 only *happens* to match a midpoint circle);
-  r=22 is an 11-gon, which is why it is not left-right symmetric.
+  r=22 is an 11-gon, which is why it is not left-right symmetric. A negative
+  radius draws exactly the circle of |r| (E5-E7).
 - **drawTriangleF and drawRectF sample each pixel at its bottom-left corner**;
   drawCircleF at the top-left. So drawRectF's columns are ceil(x).. but its
   rows floor(y).. . There is no single offset that fits triangles and
@@ -221,12 +222,16 @@ an epsilon to the coordinates.
 `test/ingame.test.mjs` runs each verification card page (the `.lua` file
 itself, in fengari via `test/helpers/cardRunner.mjs`) through `raster.js` and
 `pixelFont.js` and compares against `test/fixtures/ingame-raster.json`, the
-lit pixels of 27 screenshot pages. To extend it, add a page to
+lit pixels of 62 screenshot pages. A page's key also names its monitor
+(`tools/ingame/analysis/screen.mjs`): `D4` is a 3x3 (96x96), `E2_5x3` page
+E2 on a 5x3 (160x96); card E's pages cover every size from 1x1 to 9x5, and
+the rules hold unchanged on all of them. To extend it, add a page to
 `tools/ingame/verify*.lua`, shoot it on the monitor, convert to PNG
-(`sips -s format png`), add it to `PAGES` in
+(`sips -s format png`, named like the key), add it to `PAGES` in
 `tools/ingame/analysis/export-fixture.mjs` and run it
-(`<macDir> <winDir> <out.json>`); it refuses a page whose calibration
-residual is over 0.05px or whose two platforms disagree.
+(`<macDir> <winDir> <out.json>`); it refuses a page whose mean calibration
+residual is over 0.1px or whose two platforms disagree. Nothing is masked:
+the green rulers and labels stay under the brightness threshold.
 
 Storm Code's `screen_raster.rs` (`storm-lua-runner`) was the reference before
 the screenshots and is **wrong on lines, circle side counts and fill edges** —

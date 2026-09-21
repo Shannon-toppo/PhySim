@@ -51,10 +51,11 @@ import {
   SCREEN_SIZES, DEFAULT_SIZE, MAX_SCREENS, nextScreenNumber, pixelsToSize, fitScale
 } from "./monitorConfig.js";
 import {
-  drawPixelText, measurePixelText, measurePixelBlockHeight, LINE_HEIGHT
+  drawPixelText, layoutTextBox
 } from "./pixelFont.js";
 import {
-  strokeLine, strokeCircle, fillCircle, strokeTriangle, fillTriangle
+  strokeLine, strokeCircle, fillCircle, strokeTriangle, fillTriangle,
+  strokeRectangle, fillRectangle
 } from "./raster.js";
 import { packColour, blendPixel } from "./blend.js";
 
@@ -134,8 +135,8 @@ function unGamma(c) {
 /**
  * A draw colour resolved for the pixel buffer. `packed` is the ready-to-store
  * word for the common opaque case; the channels are kept for the blend path.
- * The packed word always carries alpha 255 — the buffer is opaque, and the
- * source alpha in `a` is what blendPixel() weighs the colour by.
+ * The packed word carries alpha 255 — the source alpha in `a` is what
+ * blendPixel() weighs the colour by, and what CLEAR stores as it is.
  * @typedef {object} Colour
  * @property {number} packed
  * @property {number} r
@@ -155,8 +156,13 @@ function makeColour(r, g, b, a) {
   return { packed: packColour(cr, cg, cb, 255), r: cr, g: cg, b: cb, a: clamp255(a) };
 }
 
-/** Cleared-screen pixel, and the two colours a frame starts from. */
-const BLACK = packColour(0, 0, 0, 255);
+/**
+ * What every pixel is before a frame's first draw: transparent black, alpha
+ * included. It shows as black through the canvas background, but a
+ * translucent draw onto it keeps a low alpha — white a=128 shows as 32, not
+ * 96 (D9 in doc/ingame-findings.md).
+ */
+const FRESH = packColour(0, 0, 0, 0);
 /** Frame-start colour. Never gamma-mapped — it is our default, not the MC's. */
 const WHITE = { packed: packColour(255, 255, 255, 255), r: 255, g: 255, b: 255, a: 255 };
 const DEFAULT_OCEAN = { packed: packColour(20, 40, 90, 255), r: 20, g: 40, b: 90, a: 255 };
@@ -520,7 +526,7 @@ function createMonitor(num, w, h, info) {
   if (!ctx) throw new Error("PhySim panel: 2D canvas context unavailable");
   const img = ctx.createImageData(w, h);
   const u32 = new Uint32Array(img.data.buffer);
-  u32.fill(BLACK);
+  u32.fill(FRESH);
   ctx.putImageData(img, 0, 0);
 
   wrapper.appendChild(label);
@@ -619,7 +625,7 @@ function scheduleRepaint() {
 
 function repaint() {
   if (monitors.size === 0) return;
-  for (const m of monitors.values()) m.u32.fill(BLACK);
+  for (const m of monitors.values()) m.u32.fill(FRESH);
   colour = WHITE;
   for (const c of lastCommands) {
     if (Array.isArray(c)) draw(c);
@@ -655,7 +661,10 @@ function draw(c) {
 
   switch (cmd) {
     case "CLEAR":
-      fillRect(m, 0, 0, canvas.width, canvas.height);
+      // Replaces, whatever the alpha: the buffer takes the colour and its
+      // alpha as they are, and the black behind the canvas shows through
+      // (B4 in doc/ingame-findings.md).
+      m.u32.fill(packColour(colour.r, colour.g, colour.b, colour.a));
       return;
 
     case "MAP":
@@ -670,29 +679,17 @@ function draw(c) {
     case "CIRCLE": {
       const fill = n(c[2]) === 1;
       if (fill) fillCircle(runner(m), n(c[3]), n(c[4]), n(c[5]), canvas);
-      else strokeCircle(plotter(m), n(c[3]), n(c[4]), n(c[5]));
+      else strokeCircle(plotter(m), n(c[3]), n(c[4]), n(c[5]), canvas);
       return;
     }
 
     case "RECT": {
-      // Snapped to whole pixels: the microcontroller is free to pass fractional
-      // coordinates, and fillRect would anti-alias those into grey edges.
+      // The game's outline is four lines, so it spans w+1 by h+1 pixels —
+      // not the w by h a filled rectangle covers.
       const fill = n(c[2]) === 1;
-      const x0 = Math.round(n(c[3])), y0 = Math.round(n(c[4]));
-      const x1 = Math.round(n(c[3]) + n(c[5])), y1 = Math.round(n(c[4]) + n(c[6]));
-      const w = x1 - x0, h = y1 - y0;
-      if (fill) {
-        fillRect(m, x0, y0, w, h);
-      } else if (w > 0 && h > 0) {
-        // Four 1px runs rather than an outline pass, so the corners aren't
-        // drawn twice (which would double-blend a translucent colour).
-        fillRect(m, x0, y0, w, 1);
-        if (h > 1) fillRect(m, x0, y1 - 1, w, 1);
-        if (h > 2) {
-          fillRect(m, x0, y0 + 1, 1, h - 2);
-          if (w > 1) fillRect(m, x1 - 1, y0 + 1, 1, h - 2);
-        }
-      }
+      const v = [n(c[3]), n(c[4]), n(c[5]), n(c[6])];
+      if (fill) fillRectangle(runner(m), v[0], v[1], v[2], v[3], canvas);
+      else strokeRectangle(plotter(m), v[0], v[1], v[2], v[3], canvas);
       return;
     }
 
@@ -705,7 +702,7 @@ function draw(c) {
     }
 
     case "TEXT": {
-      drawPixelText(pixelSetter(m), String(c[4] ?? ""), Math.round(n(c[2])), Math.round(n(c[3])));
+      drawPixelText(pixelSetter(m), String(c[4] ?? ""), n(c[2]), n(c[3]));
       return;
     }
 
@@ -758,15 +755,11 @@ function fillRect(m, x, y, w, h, col = colour) {
 }
 
 /**
- * A pixel plotter for raster.js. The rasterisers can revisit a pixel (the
- * circle's eight-way symmetry meets on the axes, a triangle's edges meet at
- * its corners), which matters only for a translucent colour — painting one
- * twice would double-blend it into a brighter dot. An opaque store is
- * idempotent, so that case skips the de-duplication (and its per-shape Set)
- * entirely: measured 1.7x faster on a mixed frame and 3.5x on an outline-heavy
- * one. The translucent path keeps a Set per shape; outlines are O(perimeter),
- * so it stays small. doc/monitor-dedup-plan.md has the measurements and the
- * plan for replacing that Set with a stamp buffer.
+ * A pixel plotter for raster.js. Every call is one draw: where a shape's edges
+ * lie on top of each other (a zero-width drawRect is the same line down and
+ * back up) a translucent colour blends twice, as it does in the game (B5 in
+ * doc/ingame-findings.md). A closed outline never revisits a pixel, so
+ * nothing else is affected.
  * @param {Monitor} m
  * @returns {import("./raster.js").Plot}
  */
@@ -780,19 +773,16 @@ function plotter(m) {
       u32[y * width + x] = packed;
     };
   }
-  const seen = new Set();
   return (x, y) => {
     if (x < 0 || y < 0 || x >= width || y >= height) return;
     const i = y * width + x;
-    if (seen.has(i)) return;
-    seen.add(i);
     u32[i] = blendPixel(u32[i], col.r, col.g, col.b, col.a);
   };
 }
 
 /**
  * Horizontal-run painter for the filled rasterisers. Runs never overlap, so
- * unlike plotter() this needs no de-duplication — just clipping.
+ * this needs nothing but clipping.
  * @param {Monitor} m
  * @returns {import("./raster.js").FillRun}
  */
@@ -828,9 +818,8 @@ function pixelSetter(m) {
 
 /**
  * hAlign/vAlign are -1/0/1 → left|centre|right and top|middle|bottom, aligned
- * within the box rather than against the screen edges. Alignment is computed
- * from the bitmap font's own metrics (each line measured independently) and
- * rounded to whole pixels so glyphs land on the pixel grid.
+ * within the box. Wrapping and placement live in pixelFont.js's
+ * layoutTextBox(), which follows the game's character-count wrap.
  * @param {Monitor} m
  * @param {number} x @param {number} y @param {number} w @param {number} h
  * @param {number} hAlign @param {number} vAlign
@@ -838,19 +827,8 @@ function pixelSetter(m) {
  */
 function drawTextbox(m, x, y, w, h, hAlign, vAlign, text) {
   const setPixel = pixelSetter(m);
-  const lines = text.split("\n");
-  const blockH = measurePixelBlockHeight(lines.length);
-
-  let top = y;
-  if (vAlign === 0) top = y + (h - blockH) / 2;
-  else if (vAlign > 0) top = y + h - blockH;
-
-  for (let i = 0; i < lines.length; i++) {
-    const lineW = measurePixelText(lines[i]);
-    let left = x;
-    if (hAlign === 0) left = x + (w - lineW) / 2;
-    else if (hAlign > 0) left = x + w - lineW;
-    drawPixelText(setPixel, lines[i], Math.round(left), Math.round(top + i * LINE_HEIGHT));
+  for (const line of layoutTextBox(text, x, y, w, h, hAlign, vAlign)) {
+    drawPixelText(setPixel, line.text, line.x, line.y);
   }
 }
 

@@ -17,6 +17,10 @@
 // mapped to the uppercase glyph. Characters with no glyph render as a 4x5
 // outline box (a visible "tofu"), which makes a missing glyph obvious on
 // screen instead of silently swallowing text.
+//
+// Every printable ASCII glyph (32-126) matches in-game screenshots (pages B7
+// and D10 in doc/ingame-findings.md); "°" is the only hand-drawn one left. A
+// fractional position is floored, as the game does.
 
 /** Glyph cell width in pixels. */
 export const GLYPH_WIDTH = 4;
@@ -37,74 +41,75 @@ const GLYPH_SOURCE = {
 
   "A": [".##.", "#..#", "####", "#..#", "#..#"],
   "B": ["###.", "#..#", "###.", "#..#", "###."],
-  "C": [".###", "#...", "#...", "#...", ".###"],
+  "C": [".##.", "#..#", "#...", "#..#", ".##."],
   "D": ["###.", "#..#", "#..#", "#..#", "###."],
   "E": ["####", "#...", "###.", "#...", "####"],
   "F": ["####", "#...", "###.", "#...", "#..."],
-  "G": [".###", "#...", "#.##", "#..#", ".###"],
+  "G": [".##.", "#...", "#.##", "#..#", ".##."],
   "H": ["#..#", "#..#", "####", "#..#", "#..#"],
-  "I": ["###.", ".#..", ".#..", ".#..", "###."],
-  "J": ["..##", "...#", "...#", "#..#", ".##."],
+  "I": [".#..", ".#..", ".#..", ".#..", ".#.."],
+  "J": ["...#", "...#", "...#", "#..#", ".##."],
   "K": ["#..#", "#.#.", "##..", "#.#.", "#..#"],
   "L": ["#...", "#...", "#...", "#...", "####"],
   "M": ["#..#", "####", "#..#", "#..#", "#..#"],
   "N": ["#..#", "##.#", "#.##", "#..#", "#..#"],
   "O": [".##.", "#..#", "#..#", "#..#", ".##."],
   "P": ["###.", "#..#", "###.", "#...", "#..."],
-  "Q": [".##.", "#..#", "#..#", "#.#.", ".#.#"],
+  "Q": [".##.", "#..#", "#..#", "#.##", ".###"],
   "R": ["###.", "#..#", "###.", "#.#.", "#..#"],
   "S": [".###", "#...", ".##.", "...#", "###."],
-  "T": ["####", ".#..", ".#..", ".#..", ".#.."],
+  "T": ["###.", ".#..", ".#..", ".#..", ".#.."],
   "U": ["#..#", "#..#", "#..#", "#..#", ".##."],
   // V is drawn 3 columns wide so it stays distinct from U at this size.
   "V": ["#.#.", "#.#.", "#.#.", "#.#.", ".#.."],
   "W": ["#..#", "#..#", "#..#", "####", "#..#"],
   "X": ["#..#", "#..#", ".##.", "#..#", "#..#"],
-  "Y": ["#..#", "#..#", ".##.", ".#..", ".#.."],
+  "Y": ["#.#.", "#.#.", ".#..", ".#..", ".#.."],
   "Z": ["####", "...#", ".##.", "#...", "####"],
 
-  // 0 carries a diagonal so it cannot be confused with O.
   "0": [".##.", "#.##", "##.#", "#..#", ".##."],
-  "1": [".#..", "##..", ".#..", ".#..", "###."],
-  "2": ["###.", "...#", ".##.", "#...", "####"],
+  "1": ["..#.", ".##.", "..#.", "..#.", "..#."],
+  "2": [".##.", "#..#", "..#.", ".#..", "####"],
   "3": ["###.", "...#", ".##.", "...#", "###."],
   "4": ["#..#", "#..#", "####", "...#", "...#"],
   "5": ["####", "#...", "###.", "...#", "###."],
   "6": [".##.", "#...", "###.", "#..#", ".##."],
-  "7": ["####", "...#", "..#.", ".#..", ".#.."],
+  "7": ["####", "...#", "..#.", "..#.", "..#."],
   "8": [".##.", "#..#", ".##.", "#..#", ".##."],
   "9": [".##.", "#..#", ".###", "...#", ".##."],
 
   ".": ["....", "....", "....", "....", ".#.."],
   ",": ["....", "....", "....", ".#..", "#..."],
   ":": ["....", ".#..", "....", ".#..", "...."],
-  ";": ["....", ".#..", "....", ".#..", "#..."],
+  ";": ["....", ".#..", "....", ".#..", ".#.."],
   "!": [".#..", ".#..", ".#..", "....", ".#.."],
-  "?": ["###.", "...#", ".##.", "....", ".#.."],
+  "?": ["##..", "..#.", ".#..", "....", ".#.."],
   "'": [".#..", ".#..", "....", "....", "...."],
   "\"": ["#.#.", "#.#.", "....", "....", "...."],
   "+": ["....", ".#..", "###.", ".#..", "...."],
   "-": ["....", "....", "###.", "....", "...."],
-  "*": ["....", "#.#.", ".#..", "#.#.", "...."],
-  "/": ["...#", "..#.", ".#..", "#...", "...."],
-  "\\": ["#...", ".#..", "..#.", "...#", "...."],
+  "*": ["#..#", ".##.", "####", ".##.", "#..#"],
+  "/": ["..#.", "..#.", ".#..", "#...", "#..."],
+  "\\": ["#...", "#...", ".#..", "..#.", "..#."],
+  "`": [".#..", "..#.", "....", "....", "...."],
   "=": ["....", "###.", "....", "###.", "...."],
-  "%": ["#..#", "...#", ".##.", "#...", "#..#"],
+  "%": ["##..", "...#", ".##.", "#...", "..##"],
   "(": ["..#.", ".#..", ".#..", ".#..", "..#."],
   ")": [".#..", "..#.", "..#.", "..#.", ".#.."],
   "[": [".##.", ".#..", ".#..", ".#..", ".##."],
   "]": [".##.", "..#.", "..#.", "..#.", ".##."],
-  "{": ["..##", ".#..", "##..", ".#..", "..##"],
-  "}": ["##..", "..#.", "..##", "..#.", "##.."],
+  "{": [".##.", ".#..", "##..", ".#..", ".##."],
+  "}": ["##..", ".#..", ".##.", ".#..", "##.."],
   "<": ["..#.", ".#..", "#...", ".#..", "..#."],
   ">": ["#...", ".#..", "..#.", ".#..", "#..."],
   "_": ["....", "....", "....", "....", "####"],
-  "|": [".#..", ".#..", ".#..", ".#..", ".#.."],
+  "|": [".#..", ".#..", "....", ".#..", ".#.."],
   "#": ["#.#.", "####", "#.#.", "####", "#.#."],
   "^": [".#..", "#.#.", "....", "....", "...."],
   "~": ["....", ".#.#", "#.#.", "....", "...."],
-  "@": [".##.", "#..#", "#.##", "#...", ".##."],
-  "$": [".###", "##..", ".##.", "..##", "###."],
+  "@": [".##.", "#..#", "#.##", "#...", ".###"],
+  "$": [".###", "#.#.", ".##.", ".#.#", "###."],
+  "&": [".#..", "#.#.", ".#..", "#.#.", ".#.#"],
   "°": [".##.", "#..#", ".##.", "....", "...."]
 };
 
@@ -183,8 +188,8 @@ export function measurePixelBlockHeight(lineCount) {
 /**
  * Rasterise text by calling setPixel once per lit pixel. Canvas-agnostic on
  * purpose: the webview passes a fillRect(px, py, 1, 1) closure, tests pass a
- * collector. (x, y) is the top-left of the first glyph cell; "\n" starts a new
- * line LINE_HEIGHT lower, back at x.
+ * collector. (x, y) is the top-left of the first glyph cell, floored; "\n"
+ * starts a new line LINE_HEIGHT lower, back at x.
  * @param {(px: number, py: number) => void} setPixel
  * @param {string} text
  * @param {number} x
@@ -192,9 +197,9 @@ export function measurePixelBlockHeight(lineCount) {
  * @returns {void}
  */
 export function drawPixelText(setPixel, text, x, y) {
-  const ox = Math.round(x);
+  const ox = Math.floor(x);
   let penX = ox;
-  let penY = Math.round(y);
+  let penY = Math.floor(y);
 
   for (const ch of String(text)) {
     if (ch === "\n") {
@@ -212,4 +217,59 @@ export function drawPixelText(setPixel, text, x, y) {
     }
     penX += GLYPH_ADVANCE;
   }
+}
+
+/**
+ * Break text into drawTextBox lines the way the game does. It counts
+ * characters, not pixels: a line holds floor(w / GLYPH_ADVANCE) of them.
+ * When the character after a full line is not a space, the line is cut back
+ * to just after its last space; nothing is trimmed, so a space can sit at
+ * either end of a line and still counts towards its width. With w=44,
+ * "wrap this box now please" comes out as "wrap ", "this box", " now ",
+ * "please" — B7's screenshot pins every one of those positions. A word longer
+ * than a line is cut at the line length, "\n" ends a line early, and runs of
+ * spaces count as they are (all D11).
+ * @param {string} text
+ * @param {number} w box width in pixels
+ * @returns {string[]}
+ */
+export function wrapTextBox(text, w) {
+  const cap = Math.max(1, Math.floor(w / GLYPH_ADVANCE));
+  const lines = [];
+  for (const para of String(text).split("\n")) {
+    let pos = 0;
+    do {
+      let end = Math.min(para.length, pos + cap);
+      if (end < para.length && para[end] !== " ") {
+        const space = para.lastIndexOf(" ", end - 1);
+        if (space >= pos) end = space + 1;
+      }
+      lines.push(para.slice(pos, end));
+      pos = end;
+    } while (pos < para.length);
+  }
+  return lines;
+}
+
+/**
+ * Position drawTextBox's lines: the top-left pen position of each, floored.
+ * Alignment below 0 is left/top, above 0 right/bottom, 0 centred; a line is
+ * len*5-1 wide and the block lines*6-1 tall. Centring and flooring reproduce
+ * B7's horizontal positions; D11 pins the height (lines*6 would put its
+ * centred "ab" and its bottom-aligned box 1px higher) — see
+ * doc/monitor-rendering.md.
+ * @param {string} text
+ * @param {number} x @param {number} y @param {number} w @param {number} h
+ * @param {number} hAlign @param {number} vAlign
+ * @returns {{text: string, x: number, y: number}[]}
+ */
+export function layoutTextBox(text, x, y, w, h, hAlign, vAlign) {
+  const lines = wrapTextBox(text, w);
+  const blockH = measurePixelBlockHeight(lines.length);
+  const top = vAlign < 0 ? y : vAlign > 0 ? y + h - blockH : y + (h - blockH) / 2;
+  return lines.map((line, i) => {
+    const lineW = measurePixelText(line);
+    const left = hAlign < 0 ? x : hAlign > 0 ? x + w - lineW : x + (w - lineW) / 2;
+    return { text: line, x: Math.floor(left), y: Math.floor(top) + i * LINE_HEIGHT };
+  });
 }

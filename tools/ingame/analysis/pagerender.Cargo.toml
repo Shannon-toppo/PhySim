@@ -1,0 +1,7 @@
+[package]
+name = "pagerender"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lua-runtime-core = { path = "../../../../storm-lua-runner/rust/lua-runtime-core" }

@@ -1,8 +1,8 @@
 // media/blend.js — the packing and blending the monitor pixel buffer is built
 // on. The point of these tests is that a packed word really is the RGBA byte
 // order ImageData expects (get this backwards and every colour comes out with
-// red and blue swapped) and that blending an opaque destination is an exact
-// lerp with no drift.
+// red and blue swapped), and that blending reproduces the game's measured
+// values — alpha is blended too, and the monitor shows rgb × alpha.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -45,35 +45,63 @@ test("blendPixel at zero alpha leaves the destination alone", () => {
   assert.equal(blendPixel(dst, 200, 100, 50, 0), dst);
 });
 
-test("blendPixel at half alpha lands on the midpoint", () => {
+/** What the monitor shows for one packed pixel: rgb × alpha, on black. */
+const shown = (word) => ["r", "g", "b"].map(ch =>
+  Math.round(unpackChannel(word, ch) * unpackChannel(word, "a") / 255));
+
+test("blendPixel at half alpha: colour at the midpoint, alpha lowered too", () => {
   const dst = packColour(0, 0, 0, 255);
-  // 128/255 of 255 is 128.0, and half of 200 over 0 is 100.4 -> 100
-  assert.deepEqual(bytesOf(blendPixel(dst, 255, 255, 255, 128)), [128, 128, 128, 255]);
-  assert.deepEqual(bytesOf(blendPixel(dst, 200, 100, 40, 128)), [100, 50, 20, 255]);
-  // and the symmetric case: half of white onto white stays white
-  const white = packColour(255, 255, 255, 255);
-  assert.deepEqual(bytesOf(blendPixel(white, 255, 255, 255, 128)), [255, 255, 255, 255]);
+  // rgb is the plain lerp; alpha takes the same weights: 128·128 + 255·127.
+  assert.deepEqual(bytesOf(blendPixel(dst, 255, 255, 255, 128)), [128, 128, 128, 191]);
+  assert.deepEqual(bytesOf(blendPixel(dst, 200, 100, 40, 128)), [100, 50, 20, 191]);
 });
 
-test("the result is always opaque — the buffer never goes see-through", () => {
-  for (const a of [0, 1, 64, 128, 200, 254, 255]) {
-    const out = blendPixel(packColour(9, 9, 9, 255), 250, 5, 100, a);
-    assert.equal(unpackChannel(out, "a"), 255);
+test("the game's measured values come out (B2/B3 in doc/ingame-findings.md)", () => {
+  // [destination, source rgb, alpha, what the game showed]. The buffer is
+  // 8-bit, so a value may land one step off the game's.
+  const black = packColour(0, 0, 0, 255), grey = packColour(128, 128, 128, 255);
+  const white = packColour(255, 255, 255, 255);
+  const cases = [
+    [black, 255, 128, 96],   // src-over would give 128
+    [grey, 255, 51, 129],    // barely moves; src-over would give 153
+    [grey, 255, 204, 193],
+    [white, 0, 17, 221],
+    [black, 255, 64, 51],
+  ];
+  for (const [dst, c, a, game] of cases) {
+    const got = shown(blendPixel(dst, c, c, c, a))[0];
+    assert.ok(Math.abs(got - game) <= 2, `${c} a=${a}: ${got}, game ${game}`);
   }
 });
 
-test("repeated blends of the same colour converge instead of drifting", () => {
-  // Rounding down would leave a stack of translucent draws permanently darker
-  // than the colour being drawn.
+test("restacking a translucent colour levels off at alpha, not at white", () => {
+  // Game: 96, 119, 126, 126, 126 for white a=128 stacked on black.
   let px = packColour(0, 0, 0, 255);
-  for (let i = 0; i < 200; i++) px = blendPixel(px, 200, 200, 200, 128);
-  assert.deepEqual(bytesOf(px), [200, 200, 200, 255]);
+  const seen = [];
+  for (let i = 0; i < 5; i++) { px = blendPixel(px, 255, 255, 255, 128); seen.push(shown(px)[0]); }
+  assert.deepEqual(seen, [96, 120, 126, 127, 127]);
+  // and it stays there without drifting
+  for (let i = 0; i < 200; i++) px = blendPixel(px, 255, 255, 255, 128);
+  assert.ok(Math.abs(shown(px)[0] - 128) <= 1);
+});
+
+test("a frame starts transparent: white a=128 onto it shows as 32 (D9)", () => {
+  const fresh = packColour(0, 0, 0, 0);
+  assert.equal(shown(blendPixel(fresh, 255, 255, 255, 128))[0], 32);
+  assert.ok(shown(blendPixel(fresh, 255, 255, 255, 32))[0] <= 1);   // game: indistinguishable from black
+});
+
+test("an opaque draw always leaves the pixel opaque", () => {
+  for (const da of [0, 1, 128, 255]) {
+    const out = blendPixel(packColour(9, 9, 9, da), 250, 5, 100, 255);
+    assert.deepEqual(bytesOf(out), [250, 5, 100, 255]);
+  }
 });
 
 test("channels stay in range for every alpha", () => {
   for (let a = 0; a <= 255; a++) {
     const out = blendPixel(packColour(255, 0, 128, 255), 0, 255, 128, a);
-    for (const ch of /** @type {const} */ (["r", "g", "b"])) {
+    for (const ch of /** @type {const} */ (["r", "g", "b", "a"])) {
       const v = unpackChannel(out, ch);
       assert.ok(v >= 0 && v <= 255, `alpha ${a} produced ${ch}=${v}`);
     }

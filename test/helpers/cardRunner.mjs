@@ -3,8 +3,9 @@
 // the same file pasted into the game, so the test replays exactly what was
 // photographed rather than a hand-copied transcription of it.
 //
-// `screen` records its calls; `input.getNumber(32)` returns the page number,
-// which every card treats as "jump to this page" in onTick().
+// `screen` records its calls and reports the monitor's size (96x96 unless
+// told otherwise); `input.getNumber(32)` returns the page number, which
+// every card treats as "jump to this page" in onTick().
 
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
@@ -25,7 +26,7 @@ local function rec(name)
     OUT[#OUT + 1] = table.concat(t, " ")
   end
 end
-screen = { getWidth = function() return 96 end, getHeight = function() return 96 end }
+screen = { getWidth = function() return WIDTH end, getHeight = function() return HEIGHT end }
 for _, n in ipairs({ "setColor", "drawClear", "drawRect", "drawRectF", "drawCircle", "drawCircleF",
   "drawLine", "drawText", "drawTextBox", "drawTriangle", "drawTriangleF" }) do screen[n] = rec(n) end
 input = { getBool = function() return false end,
@@ -35,12 +36,13 @@ input = { getBool = function() return false end,
 /**
  * @param {string} file path to the card's .lua
  * @param {number} page
+ * @param {{ width: number, height: number }} [size] the monitor, 96x96 by default
  * @returns {(string | number)[][]} [name, ...args] per screen call
  */
-export function cardCalls(file, page) {
+export function cardCalls(file, page, size = { width: 96, height: 96 }) {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
-  const src = `PAGE = ${page}\n${PRELUDE}\n${readFileSync(file, "utf8")}\nonTick() onDraw()\nRESULT = table.concat(OUT, "\\n")`;
+  const src = `PAGE = ${page} WIDTH = ${size.width} HEIGHT = ${size.height}\n${PRELUDE}\n${readFileSync(file, "utf8")}\nonTick() onDraw()\nRESULT = table.concat(OUT, "\\n")`;
   if (lauxlib.luaL_dostring(L, to_luastring(src)) !== 0) {
     throw new Error(`${file} page ${page}: ${to_jsstring(lua.lua_tostring(L, -1))}`);
   }

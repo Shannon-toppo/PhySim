@@ -2,8 +2,11 @@
 //
 // test/fixtures/ingame-raster.json holds the lit pixels of Stormworks monitor
 // screenshots (tools/ingame/, Apple M5 and RTX 4070Ti — identical wherever
-// both were shot). Each test runs the same page of the same card script
-// (tools/ingame/verify*.lua, in fengari) and draws its white calls through
+// both were shot). A page's key names the monitor too: "D4" is a 3x3
+// (96x96), "E2_5x3" page E2 on a 5x3 (160x96) — see
+// tools/ingame/analysis/screen.mjs. Each test runs the same page of the same
+// card script (tools/ingame/verify*.lua, in fengari) at that size and draws
+// its white calls through
 // media/raster.js and media/pixelFont.js — the code the panel uses — and
 // demands an exact match. Regenerate the fixture with
 // tools/ingame/analysis/export-fixture.mjs; doc/ingame-findings.md explains
@@ -20,6 +23,7 @@ import {
   strokeRectangle, fillRectangle
 } from "../media/raster.js";
 import { drawPixelText, layoutTextBox } from "../media/pixelFont.js";
+import { parsePage } from "../tools/ingame/analysis/screen.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CARDS = {
@@ -27,27 +31,27 @@ const CARDS = {
   B: "tools/ingame/verifyB_color.lua",
   C: "tools/ingame/verifyC_circle.lua",
   D: "tools/ingame/verifyD_open.lua",
+  E: "tools/ingame/verifyE_sizes.lua",
 };
-const SCREEN = { width: 96, height: 96 };
 const fixture = JSON.parse(fs.readFileSync(path.join(ROOT, "test/fixtures/ingame-raster.json"), "utf8"));
-
-// The screenshot can't see under the ruler ticks or the page label.
-const masked = (x, y) => x < 2 || y < 2 || y >= 94 || (x >= 3 && x <= 16 && y >= 3 && y <= 8);
 
 /**
  * Pixels a page lights in a bright colour. The rulers, labels and reference
  * dots are dim green, below the fixture's brightness threshold, so they are
- * skipped here the same way.
- * @param {string} page e.g. "D4"
+ * skipped here the same way. Nothing else is: a white pixel drawn over a
+ * ruler tick shows in the screenshot like any other.
+ * @param {string} page e.g. "D4", "E2_5x3"
  */
 function render(page) {
+  const { card, page: pageNo, width, height } = parsePage(page);
+  const SCREEN = { width, height };
   const lit = new Set();
   let bright = true;
   const plot = (x, y) => {
-    if (bright && x >= 0 && y >= 0 && x < SCREEN.width && y < SCREEN.height && !masked(x, y)) lit.add(`${x},${y}`);
+    if (bright && x >= 0 && y >= 0 && x < SCREEN.width && y < SCREEN.height) lit.add(`${x},${y}`);
   };
   const run = (x, y, w) => { for (let i = 0; i < w; i++) plot(x + i, y); };
-  for (const [name, ...a] of cardCalls(path.join(ROOT, CARDS[page[0]]), Number(page.slice(1)))) {
+  for (const [name, ...a] of cardCalls(path.join(ROOT, CARDS[card]), pageNo, SCREEN)) {
     const n = /** @type {number[]} */ (a);
     switch (name) {
       case "setColor": bright = n[0] >= 200 && n[1] >= 200 && n[2] >= 200; break;

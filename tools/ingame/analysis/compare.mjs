@@ -16,18 +16,18 @@ const lum = ([r, g, b]) => 0.299 * r + 0.587 * g + 0.114 * b;
 // The screenshot has bloom and JPEG ringing; the canon is exact. A lit pixel
 // on the monitor is far brighter than the black background either way.
 const on = (p, th) => lum(p) > th;
-// Ignore the rulers (top and bottom two rows, left two columns) and the page label.
-const isRuler = (x, y) => x < 2 || y < 2 || y >= 94 || (y >= 3 && y <= 8 && x >= 3 && x <= 16);
-
 const shot = rectify(process.argv[2], true);
+const W = shot.width, H = shot.height;
+// Ignore the rulers (top and bottom two rows, left two columns) and the page label.
+const isRuler = (x, y) => x < 2 || y < 2 || y >= H - 2 || (y >= 3 && y <= 8 && x >= 3 && x <= 16);
 const canon = loadPPM(process.argv[3]);
 const TH = +(process.argv[4] ?? 90);
 
 let diff = 0, shotOn = 0, canonOn = 0;
 const rows = [];
-for (let y = 0; y < 96; y++) {
+for (let y = 0; y < H; y++) {
   let r = "";
-  for (let x = 0; x < 96; x++) {
+  for (let x = 0; x < W; x++) {
     if (isRuler(x, y)) { r += " "; continue; }
     const a = on(shot[y][x], TH), b = on(canon[y][x], TH);
     if (a) shotOn++;

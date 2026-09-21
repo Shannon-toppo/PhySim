@@ -227,8 +227,8 @@ export function drawPixelText(setPixel, text, x, y) {
  * either end of a line and still counts towards its width. With w=44,
  * "wrap this box now please" comes out as "wrap ", "this box", " now ",
  * "please" — B7's screenshot pins every one of those positions. A word longer
- * than a line is cut at the line length (not yet checked in game). "\n" ends
- * a line early.
+ * than a line is cut at the line length, "\n" ends a line early, and runs of
+ * spaces count as they are (all D11).
  * @param {string} text
  * @param {number} w box width in pixels
  * @returns {string[]}
@@ -255,8 +255,9 @@ export function wrapTextBox(text, w) {
  * Position drawTextBox's lines: the top-left pen position of each, floored.
  * Alignment below 0 is left/top, above 0 right/bottom, 0 centred; a line is
  * len*5-1 wide and the block lines*6-1 tall. Centring and flooring reproduce
- * B7's horizontal positions; the vertical ones fit the same rule but would
- * also fit lines*6 — see doc/ingame-findings.md.
+ * B7's horizontal positions; D11 pins the height (lines*6 would put its
+ * centred "ab" and its bottom-aligned box 1px higher) — see
+ * doc/monitor-rendering.md.
  * @param {string} text
  * @param {number} x @param {number} y @param {number} w @param {number} h
  * @param {number} hAlign @param {number} vAlign

@@ -220,7 +220,8 @@ export function strokeLine(plot, x1, y1, x2, y2, bounds) {
 /**
  * How many sides the game gives a circle of radius r: 8 up to r=17, one more
  * per 2px of radius, capped at 16 from r=32. Fitted over r=1..22, 32 and 44;
- * the cap sits somewhere in 16..21 — 16 is the natural reading.
+ * the cap is 16 (D2: r=34/38/42 are all 16-gons) and a fractional radius is
+ * floored (D3: r=17.5 and 19.5 give 8 and 9 sides).
  * @param {number} r
  */
 export function circleSides(r) {

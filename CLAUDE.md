@@ -189,7 +189,8 @@ bounded by width only, as it has always been; tall layouts scroll.
 
 `media/raster.js` is fitted to **screenshots of the real game** (Stormworks
 v1.15.23; Apple M5 and RTX 4070Ti give identical pixels), not to any other
-implementation. `doc/ingame-findings.md` has the evidence. The monitor is
+implementation. `doc/ingame-findings.md` has the evidence. `doc/monitor-rendering.md`
+explains the resulting rules front to back, with pixel examples. The monitor is
 plain GPU rasterisation, and four of its rules look like bugs and are not:
 
 - **Lines use the diamond-exit rule** on 1/256px-snapped endpoints. Pixel

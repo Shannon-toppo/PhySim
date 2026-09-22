@@ -238,10 +238,8 @@ the rules hold unchanged on all of them. To extend it, add a page to
 residual is over 0.1px or whose two platforms disagree. Nothing is masked:
 the green rulers and labels stay under the brightness threshold.
 
-Storm Code's `screen_raster.rs` (`storm-lua-runner`) was the reference before
-the screenshots and is **wrong on lines, circle side counts and fill edges** —
-don't port from it again. The file of the same name in `storm-editor` is a
-different implementation again; don't use it either.
+Fit changes to the screenshots, never to another monitor emulator: the rules
+here came out of the game itself, and ported rules have been wrong before.
 
 Compositing, the font and TEXTBOX follow the game too (see
 `doc/ingame-findings.md`): `blend.js` applies the blend weights to **alpha as

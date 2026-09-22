@@ -1,4 +1,4 @@
-// Rectified screenshot vs canon render: binarise both, print the diff.
+// Rectified screenshot vs an expected render: binarise both, print the diff.
 import { rectify } from "./rectify.mjs";
 import fs from "node:fs";
 
@@ -13,7 +13,7 @@ function loadPPM(p) {
 }
 
 const lum = ([r, g, b]) => 0.299 * r + 0.587 * g + 0.114 * b;
-// The screenshot has bloom and JPEG ringing; the canon is exact. A lit pixel
+// The screenshot has bloom and JPEG ringing; the expected render is exact. A lit pixel
 // on the monitor is far brighter than the black background either way.
 const on = (p, th) => lum(p) > th;
 const shot = rectify(process.argv[2], true);
@@ -34,14 +34,14 @@ for (let y = 0; y < H; y++) {
     if (b) canonOn++;
     if (a && b) r += "#";
     else if (a) r += "G";        // game only
-    else if (b) r += "C";        // canon only
+    else if (b) r += "C";        // expected only
     else r += ".";
     if (a !== b) diff++;
   }
   rows.push(r);
 }
-console.log(`実機点灯=${shotOn}  正典点灯=${canonOn}  不一致=${diff}`);
-console.log("凡例: # 一致(点灯)  G 実機のみ  C 正典のみ  . 一致(消灯)");
+console.log(`実機点灯=${shotOn}  期待点灯=${canonOn}  不一致=${diff}`);
+console.log("凡例: # 一致(点灯)  G 実機のみ  C 期待のみ  . 一致(消灯)");
 const from = rows.findIndex(r => /[#GC]/.test(r));
 const to = rows.length - 1 - [...rows].reverse().findIndex(r => /[#GC]/.test(r));
 rows.slice(Math.max(0, from - 1), to + 2).forEach((r, i) => console.log(String(Math.max(0, from - 1) + i).padStart(2) + " " + r));

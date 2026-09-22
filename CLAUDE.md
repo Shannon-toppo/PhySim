@@ -29,7 +29,7 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 
 - `protocol.test.mjs` — `physServer.encode()` wire format (4-digit prefix, field order, `fmt` rounding).
 - `channels.test.mjs` — known-value + golden-regression tests for `media/channels.js` (CH13–17 math).
-- `roundtrip.test.mjs` — Node `encode()` bytes fed through `PhySim.lua`'s real `update()` parser and read back (frame splits, concatenation, corrupt-prefix resync).
+- `roundtrip.test.mjs` — Node `encode()` bytes fed through `PhySim.lua`'s real `update()` parser and read back (frame splits, concatenation, corrupt-prefix resync), plus `RATE` landing in `simulator._timePerFrame` and a closed socket restoring 60 Hz.
 - `parity.test.mjs` — **the CH13–17 desync guard**: runs `media/channels.js` and `PhySim.lua:injectAsInputs` over the same vectors and asserts agreement to 1e-9. Extend its vector table whenever the derived-channel math changes.
 - Lua runs inside **fengari** (Lua 5.3 semantics in pure JS — same major version as lua-debug) via `test/helpers/luaRunner.mjs`, which stubs `_physim_socket` and drives `PhySim._buf` directly. No system Lua install needed.
 - `simulatorLuaPatch.test.mjs` — the `_simulator.lua` surgery: injection order (FS shim before `createSandbox`, socket after), the exe-launch suppression, idempotence, and the "upstream changed the template" cases that must warn instead of guessing.
@@ -38,7 +38,8 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `ingame.test.mjs` — **the monitor against the real game**: runs each page of `tools/ingame/verify*.lua` (fengari, `test/helpers/cardRunner.mjs`) through `raster.js` + `pixelFont.js` and compares with `test/fixtures/ingame-raster.json`, lit pixels from Stormworks screenshots. See "Monitor rasterising" below.
 - `raster.test.mjs` — `media/raster.js`: one test per rasterising rule (each tagged with the page that shows it), plus the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
 - `monitorConfig.test.mjs` — `media/monitorConfig.js`: the size table round-trips through pixels in both orientations, `nextScreenNumber` reuses a removed slot, and `fitScale` picks one factor for all monitors (and never 0).
-- `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, and the tick/send de-duplication.
+- `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, the tick/send de-duplication, and `game_time_s` counting ticks rather than wall clock.
+- `timeScale.test.mjs` — `media/timeScale.js` and the host's copy of the speed list agree, and anything else sanitises to ×1.
 - `csvLogger.test.mjs` — `src/csvLogger.ts`: CRLF records, rows arriving with no log open, a row smuggling its own newline, truncate-on-start, and an end-to-end pass where webview-shaped batches parse back as one table.
 - `simstub.test.mjs` — the shared `frame.ts` framing (prefix encode/decode, split/concat/corrupt-prefix resync) plus `simStubServer.ts`'s protocol handling: `SCREENCONFIG` → `SCREENSIZE`, portrait swap, `TICKEND` buffering/flush, draw-command parsing, and `sendTouch()`'s wire shape.
 
@@ -73,7 +74,8 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
      axis labels left. Keep the buffer resize inside the loop.
    - `pose.js` — pose number inputs ⇄ gizmo sync.
    - `messaging.js` — `readState()` / `sendState()` / rAF-debounced `scheduleSend()`.
-   - `simulation.js` — fixed-timestep integration (60 Hz accumulator) + recording/playback.
+   - `simulation.js` — fixed-timestep integration (60 Hz accumulator, stretched by the time scale) + recording/playback. Owns the toolbar's speed dropdown.
+   - `timeScale.js` — **simulation speeds + the current one, pure module** so `test/timeScale.test.mjs` runs it in Node. `src/physServer.ts` keeps its own copy of `TIME_SCALES` to validate the webview; the test asserts they agree. See "Simulation speed" below.
    - `presets.js` — preset save/load/delete UI intents.
    - `logging.js` — CSV channel logging: owns the toolbar button, batches rows over `postMessage`, and reflects the host's authoritative `csvState` (starting is a round trip — the save dialog can be cancelled).
    - `csv.js` — **column set, row formatting and sample bookkeeping, pure module** (no DOM) so `test/csv.test.mjs` runs it in Node. Owns `CSV_HEADER`, which the webview sends as the log's first row — the host never learns what a channel is. `tickRow`/`sendRow` implement the one-row-per-frame handshake: `stepSimulation()` calls `sendState()` after its tick loop, and without it every simulated frame would end with a duplicate of its last tick.
@@ -88,7 +90,7 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
 
 2. **`src/`** — the extension host.
    - `extension.ts` activates on `onStartupFinished`, listens for `vscode.debug.onDidStartDebugSession` filtered by `session.type === "lua" && session.name === "Run Simulator"` (the exact config LifeBoatAPI produces in its `runSimulator.js`). On match it starts `PhysServer` and opens the panel.
-   - `physServer.ts` is a single-client `net.createServer` on `127.0.0.1:<port>` using the **same length-prefix protocol as LifeBoatAPI's `SimulatorConnection.lua`**: `sprintf("%04d", body.length) + body`. Don't reorder the 12 fields — `PhySim.lua` parses positionally.
+   - `physServer.ts` is a single-client `net.createServer` on `127.0.0.1:<port>` using the **same length-prefix protocol as LifeBoatAPI's `SimulatorConnection.lua`**: `sprintf("%04d", body.length) + body`. Don't reorder the 12 fields — `PhySim.lua` parses positionally. It also sends `RATE|<ticks/s>` (see "Simulation speed").
    - `physSimPanel.ts` serves `media/panel.html` (the **authoritative** markup template) after substituting the `{{…}}` placeholders — CSP, nonce, webview-resource URIs, slider bounds. `substituteTemplate` throws if a placeholder is left unresolved. Note: an HTML comment in the template must never contain a literal double-brace token, or the leftover check trips.
    - `debugConfigPatcher.ts` is the **critical glue**: see "LifeBoatAPI integration" below.
    - `libraryPathInjector.ts` writes the bundled `lua/` path into `lifeboatapi.stormworks.libs.libraryPaths` for editor autocompletion. Re-run on `onDidChangeWorkspaceFolders`. The **runtime** does not depend on this setting — only autocomplete does.
@@ -271,6 +273,30 @@ Two consequences to keep in mind:
   `retainContextWhenHidden` means the webview still receives every frame
   message while hidden, but rAF doesn't run, so nothing is drawn until it
   comes back.
+
+## Simulation speed
+
+The toolbar's ×1 / ×0.5 / ×0.25 / ×0.1 stretches the **real time a tick
+takes**, never what a tick contains: velocities stay m/tick, CH13/14 keep ×60
+(game seconds). Both clocks are scaled together, or the microcontroller would
+see a position moving at a different rate than the velocity channels say:
+
+- the webview integrator (`simulation.js`'s `tickDtMs`);
+- LifeBoatAPI's Lua main loop. `PhysServer` sends `RATE|<ticks/s>` on the
+  14239 socket (on change and on every connect — Lua starts at 60 Hz), and
+  `PhySim.lua` writes `simulator._timePerFrame` in `injectAsInputs`, the only
+  place it is handed `simulator`. Not `setFrameRate()` / `TICKRATE`: both also
+  reset LifeBoatAPI's frame skip. This one path works on Windows with the real
+  exe too, which is why it doesn't go through `SimStubServer`.
+
+Lua goes back to 60 Hz when the socket closes, on `phys:close()`, and when the
+panel is disposed (the host sends ×1). Slow-down only: above 60 Hz
+LifeBoatAPI's loop falls behind silently (it resets `timeSinceFrame` instead
+of catching up). The speed is saved in `workspaceState` (`physim.timeScale`)
+and the dropdown turns yellow off ×1, so a leftover setting can't pass for
+slow user code. The clocks are not phase-locked — a Lua tick can see 0 or 2
+webview ticks, same as at 60 Hz. There is no single-step: `RATE` is only read
+inside a Lua tick, so a stopped Lua loop couldn't be woken again.
 
 ## Coordinate / sign conventions
 

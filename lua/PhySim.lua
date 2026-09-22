@@ -3,6 +3,7 @@
 -- The extension hosts a TCP server (default 127.0.0.1:14239) that streams the
 -- current state of the panel gizmo as length-prefixed text messages:
 --   "%04d" .. "PHYS|posX|posY|posZ|rotX|rotY|rotZ|velX|velY|velZ|angVelX|angVelY|angVelZ"
+--   "%04d" .. "RATE|ticksPerSecond"     (the panel's simulation speed; 60 = real time)
 --
 -- Coordinates are Stormworks left-handed: +X East, +Y Up, +Z North. Rotations
 -- are Euler XYZ in radians, normalized to [-π, π). Velocities are per tick.
@@ -55,6 +56,12 @@ PhySim = {
     client          = nil,
     isAlive         = false,
     _buf            = "",
+    -- Tick rate the panel asked for, and whether it still has to reach the
+    -- simulator. Applied in injectAsInputs, the only place we get `simulator`;
+    -- `_sim` remembers it so a closed socket can put 60 Hz back.
+    _tps            = 60,
+    _rateDirty      = false,
+    _sim            = nil,
     _state          = {
         position        = { 0, 0, 0 },
         rotation        = { 0, 0, 0 },
@@ -72,6 +79,9 @@ function PhySim:new(host, port)
     self._buf    = ""
     self.client  = nil
     self.isAlive = false
+    self._tps       = 60
+    self._rateDirty = false
+    self._sim       = nil
     self._state.position[1],        self._state.position[2],        self._state.position[3]        = 0, 0, 0
     self._state.rotation[1],        self._state.rotation[2],        self._state.rotation[3]        = 0, 0, 0
     self._state.velocity[1],        self._state.velocity[2],        self._state.velocity[3]        = 0, 0, 0
@@ -131,6 +141,8 @@ function PhySim:update()
                 self.isAlive = false
                 self.client:close()
                 self.client = nil
+                -- no panel left to show the speed; don't stay in slow motion
+                PhySim._setRate(self, 60)
             end
             break
         end
@@ -164,10 +176,28 @@ function PhySim:update()
                 self._state.angularVelocity[1] = tonumber(v[11]) or 0
                 self._state.angularVelocity[2] = tonumber(v[12]) or 0
                 self._state.angularVelocity[3] = tonumber(v[13]) or 0
+            elseif v[1] == "RATE" and #v >= 2 then
+                local tps = tonumber(v[2])
+                if tps and tps > 0 and tps <= 60 then PhySim._setRate(self, tps) end
             end
         end
     end
 end
+
+---Record a tick rate and hand it to the simulator if we already have one.
+---Writes `_timePerFrame` directly: setFrameRate() and the TICKRATE message
+---would also reset LifeBoatAPI's frame skip.
+function PhySim:_setRate(tps)
+    self._tps = tps
+    self._rateDirty = true
+    if self._sim then
+        self._sim._timePerFrame = 1 / tps
+        self._rateDirty = false
+    end
+end
+
+---Ticks per second the panel is running at (60 = real time).
+function PhySim:tickRate() return self._tps end
 
 function PhySim:position()        return self._state.position[1],        self._state.position[2],        self._state.position[3]        end
 function PhySim:rotation()        return self._state.rotation[1],        self._state.rotation[2],        self._state.rotation[3]        end
@@ -198,6 +228,14 @@ local _TWO_PI        = 2 * math.pi
 function PhySim:injectAsInputs(simulator, startCh)
     startCh = startCh or 1
     local s = self._state
+
+    -- The panel's speed slows LifeBoatAPI's tick loop along with its own
+    -- integrator. Only this call sees `simulator`, so it is where a RATE lands.
+    self._sim = simulator
+    if self._rateDirty then
+        simulator._timePerFrame = 1 / self._tps
+        self._rateDirty = false
+    end
 
     -- raw state (CH 1-12)
     simulator:setInputNumber(startCh + 0,  s.position[1])
@@ -262,4 +300,5 @@ function PhySim:close()
         self.client = nil
     end
     self.isAlive = false
+    PhySim._setRate(self, 60)
 end

@@ -16,3 +16,4 @@ media/package.json
 **/*.map
 **/*.ts
 .gitignore
+images/icon.svg

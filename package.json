@@ -4,8 +4,16 @@
   "description": "Simulate Stormworks physics sensor outputs from a 3D gizmo, alongside LifeBoatAPI's microcontroller debugger.",
   "version": "1.1.0",
   "publisher": "shannon-toppo",
+  "icon": "images/icon.png",
+  "preview": true,
   "engines": {
     "vscode": "^1.62.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
   },
   "categories": [
     "Debuggers",

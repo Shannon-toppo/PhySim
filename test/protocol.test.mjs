@@ -2,7 +2,7 @@
 // floats. PhySim.lua parses these positionally — field order is load-bearing.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { encode, fmt, ZERO_STATE } from "../out/physServer.js";
+import { encode, encodeRate, fmt, ZERO_STATE } from "../out/physServer.js";
 
 test("fmt rounds to 6 decimals and normalises", () => {
   assert.equal(fmt(1.23456789), "1.234568");
@@ -41,4 +41,20 @@ test("encode: 12 fields in documented order (pos, rot, vel, angVel)", () => {
 test("encode: zero state body", () => {
   const body = encode(ZERO_STATE).toString("utf8").slice(4);
   assert.equal(body, "PHYS|0|0|0|0|0|0|0|0|0|0|0|0");
+});
+
+test("encodeRate: RATE|<ticks per second> for each time scale", () => {
+  const body = scale => encodeRate(scale).toString("utf8").slice(4);
+  assert.equal(body(1), "RATE|60");
+  assert.equal(body(0.5), "RATE|30");
+  assert.equal(body(0.25), "RATE|15");
+  assert.equal(body(0.1), "RATE|6");
+  const buf = encodeRate(0.25).toString("utf8");
+  assert.equal(Number(buf.slice(0, 4)), buf.length - 4);
+});
+
+test("encodeRate: an unknown scale falls back to real time", () => {
+  for (const bad of [2, 0, -1, NaN, "0.25x", undefined]) {
+    assert.equal(encodeRate(bad).toString("utf8").slice(4), "RATE|60", String(bad));
+  }
 });

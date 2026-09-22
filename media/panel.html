@@ -29,6 +29,10 @@
     <button id="record" title="Record every tick during simulation">&#9679; Rec</button>
     <button id="play" title="Play back the recorded motion" disabled>&#9654; Play</button>
     <span id="rec-count" class="rec-count"></span>
+    <!-- Options are filled from media/timeScale.js; data-initial is the
+         workspace's saved speed. -->
+    <select id="time-scale" data-initial="{{timeScale}}"
+            title="Simulation speed. Slows the panel's simulation/playback and the microcontroller's tick loop together; a tick still holds the same m/tick and rad/tick."></select>
     <button id="csv-log" title="Stream CH1-17 to a CSV file for offline analysis">&#11015; CSV Log</button>
     <span id="csv-count" class="rec-count"></span>
     <button id="sidebar-toggle" class="active" title="Hide the sliders &amp; number inputs to give the viewport and the monitors the full panel width (H)">&#9707; Values</button>

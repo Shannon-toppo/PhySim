@@ -30,6 +30,7 @@ export const simBtn = mustGet("simulate");
 export const recBtn = mustGet("record");
 export const playBtn = /** @type {HTMLButtonElement} */ (mustGet("play"));
 export const recCountEl = mustGet("rec-count");
+export const timeScaleSel = /** @type {HTMLSelectElement} */ (mustGet("time-scale"));
 
 // CSV channel logging (media/logging.js owns the behaviour; the file is
 // written on the extension side).

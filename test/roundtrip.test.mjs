@@ -3,7 +3,7 @@
 // the public getters. Tolerance 1e-6 = the fmt() 6-decimal rounding.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { encode } from "../out/physServer.js";
+import { encode, encodeRate } from "../out/physServer.js";
 import { normalizeAngle } from "../media/channels.js";
 import { LuaPhySim } from "./helpers/luaRunner.mjs";
 
@@ -94,4 +94,62 @@ test("corrupt prefix bytes are dropped until a valid frame parses", () => {
   const bytes = encode(SAMPLE).toString("latin1");
   sim.feedAndUpdate("@@@@" + bytes);
   assertStateClose(sim.getState(), SAMPLE);
+});
+
+// --- RATE: the panel's simulation speed -----------------------------------------
+
+/** Run injectAsInputs against a fake simulator kept in the global `fakeSim`. */
+function injectInto(sim) {
+  sim.run(`
+    fakeSim = fakeSim or { _timePerFrame = 1/60, setInputNumber = function() end }
+    PhySim:injectAsInputs(fakeSim, 1)
+  `);
+  return Number(sim.evalString(`string.format("%.17g", fakeSim._timePerFrame)`));
+}
+
+test("RATE sets the simulator's tick period on the next injectAsInputs", () => {
+  const sim = new LuaPhySim();
+  assert.equal(injectInto(sim), 1 / 60);
+  sim.feedAndUpdate(encodeRate(0.25).toString("latin1"));
+  assert.equal(sim.evalString("tostring(PhySim:tickRate())"), "15");
+  assert.equal(injectInto(sim), 1 / 15);
+  // once the simulator is known, a new rate lands straight away
+  sim.feedAndUpdate(encodeRate(0.1).toString("latin1"));
+  assert.equal(Number(sim.evalString(`string.format("%.17g", fakeSim._timePerFrame)`)), 1 / 6);
+});
+
+test("RATE and PHYS frames interleave without disturbing each other", () => {
+  const sim = new LuaPhySim();
+  sim.feedAndUpdate(
+    encode(SAMPLE).toString("latin1") + encodeRate(0.5).toString("latin1")
+  );
+  assertStateClose(sim.getState(), SAMPLE);
+  assert.equal(injectInto(sim), 1 / 30);
+});
+
+test("a RATE outside (0, 60] is ignored", () => {
+  const sim = new LuaPhySim();
+  injectInto(sim);
+  for (const body of ["RATE|0", "RATE|-6", "RATE|120", "RATE|x", "RATE"]) {
+    sim.feedAndUpdate(String(body.length).padStart(4, "0") + body);
+  }
+  assert.equal(injectInto(sim), 1 / 60);
+});
+
+test("a closed socket puts the simulator back to 60 Hz", () => {
+  const sim = new LuaPhySim();
+  injectInto(sim);
+  sim.feedAndUpdate(encodeRate(0.1).toString("latin1"));
+  assert.equal(injectInto(sim), 1 / 6);
+  // one readable socket whose receive reports the server went away
+  sim.run(`
+    PhySim.client = {
+      receive = function() return nil, "closed", "" end,
+      close   = function() end
+    }
+    _physim_socket.select = function(r) return r end
+    PhySim:update()
+  `);
+  assert.equal(sim.evalString("tostring(PhySim.client)"), "nil");
+  assert.equal(Number(sim.evalString(`string.format("%.17g", fakeSim._timePerFrame)`)), 1 / 60);
 });

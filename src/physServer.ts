@@ -31,10 +31,34 @@ export function encode(state: PhysState): Buffer {
   return frame(v);
 }
 
+/**
+ * Simulation speeds the panel may ask for. A copy of media/timeScale.js's
+ * TIME_SCALES (the webview is ESM, the host CommonJS) — a webview message is
+ * untrusted, so the host validates on its own; test/timeScale.test.mjs keeps
+ * the two lists equal.
+ */
+export const TIME_SCALES = [1, 0.5, 0.25, 0.1];
+const TICKS_PER_SEC = 60;
+
+export function sanitizeTimeScale(v: unknown): number {
+  const n = Number(v);
+  return TIME_SCALES.includes(n) ? n : 1;
+}
+
+/**
+ * The Lua tick rate for a time scale: "RATE|<ticks per second>". PhySim.lua
+ * writes it into LifeBoatAPI's Simulator._timePerFrame (not setFrameRate /
+ * TICKRATE, which would also reset the frame skip).
+ */
+export function encodeRate(scale: number): Buffer {
+  return frame(`RATE|${fmt(TICKS_PER_SEC * sanitizeTimeScale(scale))}`);
+}
+
 export class PhysServer {
   private server: net.Server | null = null;
   private client: net.Socket | null = null;
   private latest: PhysState = ZERO_STATE;
+  private timeScale = 1;
   private port = 14239;
   private listening = false;
 
@@ -77,6 +101,21 @@ export class PhysServer {
     }
   }
 
+  getTimeScale(): number { return this.timeScale; }
+
+  /** Change the Lua tick rate. Re-sent to every new connection, since Lua starts at 60 Hz. */
+  setTimeScale(scale: number): void {
+    const s = sanitizeTimeScale(scale);
+    if (s === this.timeScale) return;
+    this.timeScale = s;
+    if (!this.client || this.client.destroyed) return;
+    try {
+      this.client.write(encodeRate(s));
+    } catch {
+      this.client = null;
+    }
+  }
+
   private onConnection(socket: net.Socket): void {
     if (this.client && !this.client.destroyed) {
       try { this.client.destroy(); } catch {}
@@ -86,6 +125,6 @@ export class PhysServer {
     socket.on("close", () => { if (this.client === socket) this.client = null; });
     socket.on("error", () => { if (this.client === socket) this.client = null; });
     // send initial state so the client has something even before the user moves the gizmo
-    try { socket.write(encode(this.latest)); } catch {}
+    try { socket.write(Buffer.concat([encode(this.latest), encodeRate(this.timeScale)])); } catch {}
   }
 }

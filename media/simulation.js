@@ -1,7 +1,8 @@
 // Simulation mode + recording/playback.
 //
 // Simulation: position/rotation are advanced from the velocities and the
-// velocities from the accelerations, on a fixed Stormworks tick (1/60 s).
+// velocities from the accelerations, on a fixed Stormworks tick (1/60 s,
+// stretched by the time scale — see timeScale.js).
 // An accumulator decouples integration from the (variable) rAF cadence, so
 // the motion is frame-rate independent and matches the rate the Lua side
 // sees.
@@ -13,14 +14,18 @@
 // start during playback.
 
 import { TICKS_PER_SEC, normalizeAngle } from "./channels.js";
-import { simBtn, recBtn, playBtn, recCountEl, readNum, writeNum } from "./dom.js";
+import { simBtn, recBtn, playBtn, recCountEl, timeScaleSel, readNum, writeNum } from "./dom.js";
 import { targetGroup } from "./scene.js";
 import { syncInputsFromPose } from "./pose.js";
 import { readState, sendState } from "./messaging.js";
 import { resetTrail, sampleTrail } from "./visuals.js";
 import { isLogging, logTick } from "./logging.js";
+import { vscode } from "./vscodeApi.js";
+import { TIME_SCALES, sanitizeTimeScale, formatTimeScale, getTimeScale, setCurrentTimeScale } from "./timeScale.js";
 
-const TICK_DT_MS = 1000 / 60;
+const TICK_DT_MS = 1000 / TICKS_PER_SEC;
+/** Real time per tick at the current speed. */
+let tickDtMs = TICK_DT_MS;
 const MAX_CATCHUP_MS = 250;          // clamp after a stall so we don't fast-forward
 let simulating = false;
 let lastSimTime = 0;
@@ -84,8 +89,8 @@ function stepSimulation() {
   if (elapsed > MAX_CATCHUP_MS) elapsed = MAX_CATCHUP_MS;
   tickAccumulator += elapsed;
   let ticks = 0;
-  while (tickAccumulator >= TICK_DT_MS) {
-    tickAccumulator -= TICK_DT_MS;
+  while (tickAccumulator >= tickDtMs) {
+    tickAccumulator -= tickDtMs;
     integrateOneTick();
     ticks++;
   }
@@ -158,8 +163,8 @@ function stepPlayback() {
   if (elapsed > MAX_CATCHUP_MS) elapsed = MAX_CATCHUP_MS;
   playAccumulator += elapsed;
   let advanced = false;
-  while (playAccumulator >= TICK_DT_MS) {
-    playAccumulator -= TICK_DT_MS;
+  while (playAccumulator >= tickDtMs) {
+    playAccumulator -= tickDtMs;
     if (playIndex >= recordBuffer.length) { setPlaying(false); break; }
     applyFrame(recordBuffer[playIndex]);
     sampleTrail();
@@ -179,6 +184,32 @@ export function step() {
   if (simulating) stepSimulation();
   else if (playing) stepPlayback();
 }
+
+/**
+ * Change the simulation speed. The accumulators carry over, so switching
+ * mid-run only changes how long the next tick takes to come due.
+ * @param {unknown} scale one of TIME_SCALES (anything else means ×1)
+ * @param {boolean} notify tell the host, which slows the Lua tick loop to match
+ */
+function setTimeScale(scale, notify) {
+  setCurrentTimeScale(scale);
+  const s = getTimeScale();
+  tickDtMs = TICK_DT_MS / s;
+  timeScaleSel.value = String(s);
+  timeScaleSel.classList.toggle("slowed", s !== 1);
+  if (notify) vscode.postMessage({ type: "timeScale", scale: s });
+}
+
+for (const s of TIME_SCALES) {
+  const opt = document.createElement("option");
+  opt.value = String(s);
+  opt.textContent = formatTimeScale(s);
+  timeScaleSel.append(opt);
+}
+// The host already runs Lua at the saved speed (it set it when opening the
+// panel), so adopting it here needs no message back.
+setTimeScale(sanitizeTimeScale(timeScaleSel.dataset.initial), false);
+timeScaleSel.addEventListener("change", () => setTimeScale(timeScaleSel.value, true));
 
 // toolbar buttons owned by this module
 simBtn.addEventListener("click", () => setSimulating(!simulating));

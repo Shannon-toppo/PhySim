@@ -78,6 +78,43 @@ body {
   cursor: help;
 }
 
+#toolbar select {
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 3px 4px;
+  font-size: 12px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+/* The browser's default focus ring is amber — next to .slowed it reads as the
+   warning, so a focused ×1 looked slowed until something else took focus. */
+#toolbar select:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+/* Anything but real time is marked, so a speed left over from the last
+   session can't pass for slow microcontroller code. Not the
+   inputValidation-warning colours: in the dark themes that background is
+   #352A05, all but indistinguishable from a normal #313131 input, and even
+   the warning icon colour (#CCA700) reads dim next to it. A fixed bright
+   yellow with near-black text stands out in dark and light themes alike. */
+#toolbar select.slowed {
+  background: #ffd60a;
+  border-color: #ffd60a;
+  color: #1e1e1e;
+  font-weight: bold;
+}
+
+/* The open list takes the select's colours; keep it a normal list. */
+#toolbar select option {
+  background: var(--vscode-dropdown-background, #3c3c3c);
+  color: var(--vscode-dropdown-foreground, #ccc);
+  font-weight: normal;
+}
+
 #toolbar .hint {
   margin-left: 12px;
   opacity: 0.7;

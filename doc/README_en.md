@@ -16,6 +16,11 @@ automatically opens a panel containing:
 - sliders for linear and angular velocity, and for linear and angular acceleration
 - a **Simulate** toggle (Space) that integrates velocity and acceleration into
   position and rotation each tick, so the gizmo moves on its own
+- a **simulation speed** dropdown (×1 / ×0.5 / ×0.25 / ×0.1) that slows the
+  panel's Simulate / Play and the microcontroller's tick loop (`onTick` /
+  `onDraw`) together. A tick still holds the same m/tick and rad/tick, so to
+  the microcontroller the game simply runs slower. Anything but ×1 is shown in
+  yellow
 - a **trail and velocity arrow** — the path of the last N ticks drawn in the 3D
   scene plus an arrow along the current linear velocity, toggled from the
   sidebar's *Visualization* section (trail length 2 / 5 / 10 / 30 seconds)
@@ -229,6 +234,34 @@ screen 1, so touch on a second monitor has to be read with
 `STORMWORKS_Simulator.exe`. Alt touch is not implemented in PhySim and is
 always 0.
 
+## Simulation speed
+
+The toolbar dropdown (×1 / ×0.5 / ×0.25 / ×0.1) slows things down so you can
+watch them change. Two clocks slow down, by the same factor:
+
+- the panel: **Simulate**'s integration and **Play**'s playback
+- the microcontroller: LifeBoatAPI's main loop (how often
+  `onLBSimulatorTick` / `onTick` / `onDraw` run)
+
+A tick still advances by the slider values (m/tick, rad/tick), and CH13/14's
+×60 is still correct — it is game seconds. Slowing only one clock would make
+the position change at a different rate than the velocity channels claim.
+
+The speed is saved per workspace and reused by the next debug session.
+Anything but ×1 turns the dropdown yellow, so a leftover setting is visible.
+
+Caveats:
+
+- The speed reaches the microcontroller through
+  `phys:injectAsInputs(simulator, …)`. A script that only calls
+  `phys:update()` gets a slowed panel but a 60 Hz microcontroller.
+- Closing the panel, calling `phys:close()`, or losing the PhySim connection
+  puts the microcontroller back to 60 ticks/s.
+- On Windows, if you also change the tick rate from `STORMWORKS_Simulator.exe`,
+  whichever changed it last wins. PhySim only writes the rate when you change
+  the speed and when it connects.
+- There is no pause or single-step.
+
 ## CSV logging
 
 The toolbar's **⬇ CSV Log** button asks where to save and starts recording as
@@ -238,14 +271,18 @@ result. The row count sits next to the button while it runs.
 Rows are written from two places: one per tick (1/60 s) while **Simulate** or
 **Play** is running, and one every time you change the sensor values by hand
 — a gizmo drag, a typed pose — while it is not. The sample interval is
-therefore not constant; use the `time_s` column as the time axis.
+therefore not constant; use the `time_s` or `game_time_s` column as the time
+axis. If you logged at a reduced simulation speed, `game_time_s` is the one
+that agrees with the velocity channels.
 
-The file has 19 columns, `sample,time_s,ch1_pos_x,…,ch17_compass`:
+The file has 21 columns, `sample,time_s,game_time_s,time_scale,ch1_pos_x,…,ch17_compass`:
 
 | Column       | Meaning                                                       |
 |--------------|---------------------------------------------------------------|
 | `sample`     | row index within the log, from 0                              |
-| `time_s`     | seconds since logging started                                 |
+| `time_s`     | seconds since logging started (wall clock)                    |
+| `game_time_s`| game seconds since logging started (ticks ÷ 60); a drag while paused doesn't advance it |
+| `time_scale` | simulation speed the row was taken at (1 = real time)         |
 | `ch1`–`ch17` | channel values, same units and rounding (6 dp) as the table above |
 
 Records are CRLF-terminated and the numbers are formatted exactly as they go
@@ -292,8 +329,9 @@ After `require("PhySim")`, the global `PhySim` is the class table.
 | `phys:rotation()`                     | `rx, ry, rz` (rad)                                |
 | `phys:velocity()`                     | `vx, vy, vz` (m/tick)                             |
 | `phys:angularVelocity()`              | `ax, ay, az` (rad/tick)                           |
-| `phys:injectAsInputs(simulator, n?)`  | Write CH `n..n+16` into `input.getNumber(...)`.   |
-| `phys:close()`                        | Close socket.                                     |
+| `phys:injectAsInputs(simulator, n?)`  | Write CH `n..n+16` into `input.getNumber(...)`. Also applies the panel's simulation speed. |
+| `phys:tickRate()`                     | The panel's simulation speed in ticks/s (60 = real time). |
+| `phys:close()`                        | Close socket and put the tick rate back to 60.    |
 
 ## Extension settings
 

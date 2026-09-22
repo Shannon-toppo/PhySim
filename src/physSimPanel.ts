@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as os from "os";
-import { PhysServer, PhysState, ZERO_STATE } from "./physServer";
+import { PhysServer, PhysState, ZERO_STATE, sanitizeTimeScale } from "./physServer";
 import { SimStubServer, ScreenRequest, sanitizeScreenRequest } from "./simStubServer";
 import { CsvLogger, defaultLogPath } from "./csvLogger";
 import { log } from "./log";
@@ -45,10 +45,12 @@ interface ScreenRemoveMsg { type: "screenRemove"; screen: number; }
 interface CsvStartMsg { type: "csvStart"; }
 interface CsvRowsMsg { type: "csvRows"; rows: unknown; }
 interface CsvStopMsg { type: "csvStop"; samples?: unknown; }
+/** Simulation speed picked in the toolbar (one of TIME_SCALES). */
+interface TimeScaleMsg { type: "timeScale"; scale: unknown; }
 type FromWebview =
   StateMsg | PresetSaveMsg | PresetLoadMsg | PresetDeleteMsg | PresetListRequestMsg
   | TouchMsg | ScreenRequestMsg | ScreenSetMsg | ScreenRemoveMsg
-  | CsvStartMsg | CsvRowsMsg | CsvStopMsg;
+  | CsvStartMsg | CsvRowsMsg | CsvStopMsg | TimeScaleMsg;
 
 type PresetMap = { [name: string]: PhysState };
 const PRESETS_KEY = "physim.presets";
@@ -57,6 +59,13 @@ const PRESETS_KEY = "physim.presets";
  * microcontroller drives is a property of the project being debugged.
  */
 const MONITORS_KEY = "physim.monitors";
+/**
+ * Simulation speed. Workspace-scoped like the monitors, and kept across
+ * sessions — slow motion is for watching the same behaviour again and again.
+ * The toolbar marks anything but ×1 so a leftover setting can't pass for slow
+ * user code.
+ */
+const TIME_SCALE_KEY = "physim.timeScale";
 const MAX_PRESET_NAME_LEN = 64;
 
 function isTriple(v: unknown): v is Triple {
@@ -168,6 +177,9 @@ export class PhysSimPanelManager {
     );
     this.panel = created;
     this.panelLocation = openLocation;
+    // The Lua tick rate follows the panel: slowed only while there is a
+    // panel showing (and marking) the speed.
+    this.server.setTimeScale(this.getTimeScale());
     created.webview.html = this.buildHtml(created.webview);
 
     if (openLocation === "newWindow") {
@@ -194,6 +206,12 @@ export class PhysSimPanelManager {
             angularVelocity: msg.angularVelocity
           };
           this.server.broadcast(state);
+          return;
+        }
+        if (msg.type === "timeScale") {
+          const scale = sanitizeTimeScale(msg.scale);
+          this.server.setTimeScale(scale);
+          await this.ctx.workspaceState.update(TIME_SCALE_KEY, scale);
           return;
         }
         if (msg.type === "presetListRequest") {
@@ -279,6 +297,8 @@ export class PhysSimPanelManager {
       this.stopCsvLog(false);
       // zero out the state on disconnect so the Lua side doesn't keep stale values
       this.server.broadcast(ZERO_STATE);
+      // Nothing left to show the speed, so don't leave Lua running slow.
+      this.server.setTimeScale(1);
     });
   }
 
@@ -425,6 +445,10 @@ export class PhysSimPanelManager {
     return this.ctx.workspaceState.update(MONITORS_KEY, list);
   }
 
+  private getTimeScale(): number {
+    return sanitizeTimeScale(this.ctx.workspaceState.get<unknown>(TIME_SCALE_KEY, 1));
+  }
+
   private getPresets(): PresetMap {
     const raw = this.ctx.globalState.get<PresetMap>(PRESETS_KEY, {});
     return raw && typeof raw === "object" ? { ...raw } : {};
@@ -469,7 +493,8 @@ export class PhysSimPanelManager {
       // (angular acceleration). toFixed(4) yields the historical literals
       // "3.1416" / "0.3142" byte-for-byte.
       piMax: Math.PI.toFixed(4),
-      piTenthMax: (Math.PI / 10).toFixed(4)
+      piTenthMax: (Math.PI / 10).toFixed(4),
+      timeScale: String(this.getTimeScale())
     });
   }
 }

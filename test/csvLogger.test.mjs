@@ -141,8 +141,8 @@ test("end to end: what the webview batches parses back as one table", async () =
     velocity: [0.5, 0, 0],
     angularVelocity: [0, 0, 0]
   });
-  logger.write(Array.from({ length: 30 }, (_, i) => tickRow(log, i * 16.67, state(i))));
-  logger.write(Array.from({ length: 30 }, (_, i) => tickRow(log, (30 + i) * 16.67, state(30 + i))));
+  logger.write(Array.from({ length: 30 }, (_, i) => tickRow(log, i * 16.67, 1, state(i))));
+  logger.write(Array.from({ length: 30 }, (_, i) => tickRow(log, (30 + i) * 16.67, 1, state(30 + i))));
   await logger.stop();
 
   const lines = fs.readFileSync(file, "utf8").split(CSV_EOL);

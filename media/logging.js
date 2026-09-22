@@ -27,6 +27,7 @@
 import { vscode } from "./vscodeApi.js";
 import { CSV_HEADER, createLog, tickRow, sendRow } from "./csv.js";
 import { csvBtn, csvCountEl } from "./dom.js";
+import { getTimeScale } from "./timeScale.js";
 
 // Rows are batched: at 60 ticks/s a message per row would be ~60 postMessage
 // round trips a second for a file write that is happy to see them in chunks.
@@ -100,7 +101,7 @@ function append(row) {
  */
 export function logTick(s) {
   if (!logging) return;
-  append(tickRow(log, performance.now(), s));
+  append(tickRow(log, performance.now(), getTimeScale(), s));
 }
 
 /**
@@ -110,7 +111,7 @@ export function logTick(s) {
  */
 export function logSend(s) {
   if (!logging) return;
-  const row = sendRow(log, performance.now(), s);
+  const row = sendRow(log, performance.now(), getTimeScale(), s);
   if (row !== null) append(row);
 }
 

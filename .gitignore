@@ -48,3 +48,6 @@ secrets.json
 *.log
 tmp/
 .tmp/
+
+# 個人用メモ（公開しない）
+doc/monitor_claude.md

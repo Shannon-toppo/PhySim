@@ -6,6 +6,18 @@
   "publisher": "shannon-toppo",
   "icon": "images/icon.png",
   "preview": true,
+  "license": "MIT",
+  "keywords": [
+    "stormworks",
+    "lifeboatapi",
+    "lua",
+    "microcontroller",
+    "physics sensor"
+  ],
+  "bugs": {
+    "url": "https://github.com/Shannon-toppo/PhySim/issues"
+  },
+  "homepage": "https://github.com/Shannon-toppo/PhySim#readme",
   "engines": {
     "vscode": "^1.62.0"
   },
@@ -79,7 +91,7 @@
         "physim.monitors.useBuiltInOnWindows": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "**Experimental (Windows only).** Render the microcontroller's monitors inside the PhySim panel instead of launching LifeBoatAPI's `STORMWORKS_Simulator.exe`.\n\nPhySim's monitor rendering is a reimplementation, not the game's: text uses a bitmap font, `screen.drawMap` has no terrain data behind it, touch is primary-touch only, and the exe's input/output panels are not reproduced — drive the channels from the PhySim panel instead. Takes effect on the next **F6**.\n\nOn macOS the built-in monitors are always used and this setting is ignored."
+          "markdownDescription": "**Experimental (Windows only).** Render the microcontroller's monitors inside the PhySim panel instead of launching LifeBoatAPI's `STORMWORKS_Simulator.exe`.\n\nPhySim's monitor view is its own implementation, with drawing rules fitted to in-game screenshots. It does not reproduce `screen.drawMap` terrain (filled with sea colour instead), alt touch (primary touch only), or the exe's input/output panels — drive the channels from the PhySim panel instead. Takes effect on the next **F6**.\n\nOn macOS the built-in monitors are always used and this setting is ignored."
         }
       }
     }

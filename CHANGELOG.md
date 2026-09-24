@@ -4,10 +4,23 @@ PhySim の主な変更点です。各バージョンの詳細は [GitHub Release
 
 ## [Unreleased]
 
+### 変更
+- README をマーケットプレイス向けに書き直しました。変更履歴（この CHANGELOG）と開発者向けの内容（CONTRIBUTING.md）を README から分けました。
+- `physim.monitors.useBuiltInOnWindows` の説明文を今の実装に合わせました。
+
+## [1.1.1] - 2026-09-24
+
+VS Code Marketplace で公開した最初のバージョンです（プレビュー）。
+
 ### 追加
 - シミュレーション速度（×1 / ×0.5 / ×0.25 / ×0.1）。パネルの Simulate / Play と、LifeBoatAPI 側のマイコンの tick を同じ倍率で遅くします。1ティックの中身（m/tick・rad/tick）は変わりません。
 - `phys:tickRate()`。パネルのシミュレーション速度をティック/秒で返します。
-- CSV ログに `game_time_s`（ゲーム内秒数）と `time_scale`（記録時の速度）の列を追加しました。
+- CSV ログに `game_time_s`（ゲーム内秒数）と `time_scale`（記録時の速度）の列を追加しました（19 → 21 列）。
+- 拡張機能のアイコン。
+
+### 変更
+- 信頼されていないワークスペースと仮想ワークスペースでは動かないことを `package.json` に明記しました。
+- 実機検証用のスクリプト（`tools/ingame/verify*.lua`）を ASCII だけにしました。ゲーム内エディタにそのまま貼れます。
 
 ## [1.1.0] - 2026-09-22
 
@@ -102,7 +115,8 @@ PhySim の主な変更点です。各バージョンの詳細は [GitHub Release
 
 - 最初の公開版。
 
-[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/1.1.1...HEAD
+[1.1.1]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.1
 [1.1.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.0
 [1.0.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.0.0
 [0.4.6]: https://github.com/Shannon-toppo/PhySim/releases/tag/0.4.6

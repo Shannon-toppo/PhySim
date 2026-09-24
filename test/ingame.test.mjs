@@ -32,13 +32,14 @@ const CARDS = {
   C: "tools/ingame/verifyC_circle.lua",
   D: "tools/ingame/verifyD_open.lua",
   E: "tools/ingame/verifyE_sizes.lua",
+  F: "tools/ingame/verifyF_gaps.lua",
 };
 // The cards are pasted into the in-game editor as they are, and the game
 // can't take multi-byte characters.
 for (const [card, file] of Object.entries(CARDS)) {
   test(`card ${card} is ASCII only`, () => {
     const text = fs.readFileSync(path.join(ROOT, file), "utf8");
-    const bad = text.split("\n").flatMap((l, i) => /[^\x00-\x7F]/.test(l) ? [`${file}:${i + 1}`] : []);
+    const bad = text.split("\n").flatMap((l, i) => /[^\p{ASCII}]/u.test(l) ? [`${file}:${i + 1}`] : []);
     assert.deepEqual(bad, []);
   });
 }

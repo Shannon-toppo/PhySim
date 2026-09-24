@@ -29,7 +29,8 @@ const PAGES = ["A1", "A2", "A3", "A4", "A5", "A6", "B5", "B6", "B7",
   "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D10", "D11", "D12"];
 // Card E is taken as it comes: E1-E4 on whatever monitors were shot
 // ("E2_2x1.png", "E2_9x5.png", ...; a bare "E2.png" is a 3x3), E5-E7 on a 3x3.
-const OPTIONAL = /^E[1-7]$/;
+// Card F likewise, whichever pages were shot; F7 and F8 are colour pages.
+const OPTIONAL = /^(E[1-7]|F[1-69])$/;
 const TH = 150;
 // rectify.mjs samples the middle half of each logical pixel (0.25..0.75), so
 // a fit off by well under 0.25px cannot pull a sample into the neighbour.
@@ -53,7 +54,7 @@ function runs(png) {
   return out;
 }
 
-/** Pages to export: the required list, then every card-E shot found. */
+/** Pages to export: the required list, then every card-E/F shot found. */
 function pageList(dirs) {
   const found = new Set();
   for (const d of dirs) {

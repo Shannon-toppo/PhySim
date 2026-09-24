@@ -32,6 +32,7 @@ const CARDS = {
   C: "tools/ingame/verifyC_circle.lua",
   D: "tools/ingame/verifyD_open.lua",
   E: "tools/ingame/verifyE_sizes.lua",
+  F: "tools/ingame/verifyF_gaps.lua",
 };
 // The cards are pasted into the in-game editor as they are, and the game
 // can't take multi-byte characters.

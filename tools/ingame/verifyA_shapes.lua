@@ -1,7 +1,7 @@
--- PhySim 実機検証 A: 図形 (drawCircle / drawLine / drawTriangleF)
--- モニター(3x3 以上)を映像出力へ、そのコンポジット出力を MC 入力へ接続。
--- 画面の右半分タップ=次ページ / 左半分タップ=前ページ。左上に "A<n>" を表示。
--- 目盛は緑: 上端と左端に 5px ごと 1px、10px ごと 2px。
+-- PhySim in-game verification A: shapes (drawCircle / drawLine / drawTriangleF)
+-- Wire a monitor (3x3 or larger) video <- MC, and its composite output -> MC input.
+-- Tap right half = next page / left half = previous page. "A<n>" shown top-left.
+-- Green rulers on top and left edges: 1px every 5px, 2px every 10px.
 S=screen
 P=1
 N=6
@@ -13,7 +13,7 @@ function onTick()
     P=(P-1+(input.getNumber(3)>input.getNumber(1)/2 and 1 or -1))%N+1
   end
   q=t
-  -- 保険: number ch32 にダイヤルを繋げばページを直接指定できる
+  -- Fallback: a dial on number ch32 selects the page directly
   local n=input.getNumber(32)
   if n>=1 then P=math.min(N,math.floor(n)) end
 end
@@ -32,35 +32,35 @@ function onDraw()
   R()
 
   if P==1 then
-    -- 分割数・開始角・回転方向。半径によらず16角形か?
+    -- Segment count, start angle, winding direction. A 16-gon regardless of radius?
     S.drawCircle(48,52,22)
 
   elseif P==2 then
-    -- 中心を半ピクセルずらすと P1 に対してどう動くか (round か floor か)
+    -- Shift the centre by half a pixel: how does it move relative to P1 (round or floor)?
     S.drawCircle(48.5,52.5,22)
 
   elseif P==3 then
-    -- 上段: 輪郭 r=1..7  中段: 塗り r=1..7
-    -- 16角形なら辺長 = 0.39*r。1px 未満の辺が捨てられるなら r<=2.5 の輪郭は消える。
+    -- Top row: outline r=1..7  middle row: filled r=1..7
+    -- A 16-gon has side length 0.39*r. If sides under 1px are dropped, outlines with r<=2.5 vanish.
     local x=5
     for r=1,7 do
       S.drawCircle(x,20,r)
       S.drawCircleF(x,44,r)
       x=x+r*2+3
     end
-    -- 下段: しきい値ちょうど (0.39*2.5=0.975 / 0.39*2.6=1.014)
+    -- Bottom row: right at the threshold (0.39*2.5=0.975 / 0.39*2.6=1.014)
     local t={2.4,2.5,2.6,2.7,3}
     for i=1,5 do S.drawCircle(i*14-4,70,t[i]) end
 
   elseif P==4 then
-    -- 端点の小数をどう丸めるか。短い縦棒が整数基準、長い線が被検体。
+    -- How fractional endpoints are rounded. Short vertical ticks are the integer reference, the long line is under test.
     local f={0,.25,.5,.75,-.25}
     for i=1,5 do
       local b=i*16-8
       S.setColor(0,90,0) S.drawRectF(b,20,1,6)
       S.setColor(255,255,255) S.drawLine(b+f[i],30,b+f[i],56)
     end
-    -- 同じことを Y 方向で。右の短い横棒が整数基準。
+    -- Same thing in Y. The short horizontal ticks on the right are the integer reference.
     for i=1,5 do
       local b=i*6+54
       S.setColor(0,90,0) S.drawRectF(70,b,6,1)
@@ -68,15 +68,15 @@ function onDraw()
     end
 
   elseif P==5 then
-    -- 左: 水平線の長さ 0..2px。どこから描かれ、何画素になるか。
+    -- Left: horizontal lines of length 0..2px. Where do they start, and how many pixels?
     local L={0,.3,.5,.7,.9,1,1.1,1.5,2}
     for i=1,9 do
       local y=i*6+10
       S.setColor(0,90,0) S.drawRectF(6,y,1,1)
       S.setColor(255,255,255) S.drawLine(12,y,12+L[i],y)
     end
-    -- 右: 斜め。長さ判定が dx^2+dy^2 か軸ごとかを分ける
-    -- (.8,.8) は斜長 1.13 だが軸長 0.8。
+    -- Right: diagonals. Tells whether the length test is dx^2+dy^2 or per axis
+    -- (.8,.8) has a diagonal length of 1.13 but an axis length of 0.8.
     local d={{.8,.8},{.6,.6},{.9,.4},{1.2,0},{.7,.7}}
     for i=1,5 do
       local y=i*8+16
@@ -85,10 +85,10 @@ function onDraw()
     end
 
   else
-    -- 塗り三角形の境界規則 (中心が内側の画素だけか、はみ出すか)
+    -- Filled-triangle edge rule (only pixels whose centre is inside, or spill over?)
     S.drawTriangleF(6.5,12.25,46.75,26.5,18,60.125)
     S.drawTriangle(52,12,92,26,64,60)
-    -- 同じ直角三角形を 整数 と +0.5 で。各行の幅を比べる。
+    -- The same right triangle at integer and +0.5. Compare each row's width.
     S.drawTriangleF(50,68,70,68,50,88)
     S.drawTriangleF(10.5,68.5,30.5,68.5,10.5,88.5)
   end

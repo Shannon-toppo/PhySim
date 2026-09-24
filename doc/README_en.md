@@ -1,57 +1,57 @@
 # Stormworks Physics Sensor Sim (PhySim)
 
-### [日本語版](https://github.com/Shannon-toppo/PhySim/blob/main/README.md)
+### [日本語](https://github.com/Shannon-toppo/PhySim/blob/main/README.md)
 
-A VSCode extension that runs alongside **Stormworks Lua with LifeBoatAPI** and
-lets you drive a virtual `physics sensor` from a 3D gizmo window — so you can
-test PID controllers, INS, autopilot logic etc. without having to launch the
-game.
+A VSCode extension for Stormworks microcontroller development that lets you feed `physics sensor` block values from a 3D gizmo.
+It works together with the **Stormworks Lua with LifeBoatAPI** simulator, so you can test PID controllers,
+INS, autopilot logic and the like without launching the game.
 
-![PhySim in action](../Animation.gif)
+![PhySim in action](https://raw.githubusercontent.com/Shannon-toppo/PhySim/main/Animation.gif)
 
-When you press **F6** to start the LifeBoatAPI simulator, this extension
-automatically opens a panel containing:
+- Move the aircraft's position and attitude with the 3D gizmo, and the values arrive directly in `input.getNumber(1..17)`
+- **Simulate** mode that moves it on its own from velocity and acceleration, plus recording and playback
+- Switchable simulation speed (×1 / ×0.5 / ×0.25 / ×0.1) and CSV logging
+- Works on macOS too. The microcontroller's monitor view is PhySim's own implementation, checked pixel-by-pixel against in-game screenshots
 
-- a 3D viewport with a translate / rotate gizmo (right-mouse-drag to orbit)
-- sliders for linear and angular velocity, and for linear and angular acceleration
-- a **Simulate** toggle (Space) that integrates velocity and acceleration into
-  position and rotation each tick, so the gizmo moves on its own
-- a **simulation speed** dropdown (×1 / ×0.5 / ×0.25 / ×0.1) that slows the
-  panel's Simulate / Play and the microcontroller's tick loop (`onTick` /
-  `onDraw`) together. A tick still holds the same m/tick and rad/tick, so to
-  the microcontroller the game simply runs slower. Anything but ×1 is shown in
-  yellow
-- a **trail and velocity arrow** — the path of the last N ticks drawn in the 3D
-  scene plus an arrow along the current linear velocity, toggled from the
-  sidebar's *Visualization* section (trail length 2 / 5 / 10 / 30 seconds)
-- **CSV logging** — the toolbar's *⬇ CSV Log* button streams CH1–17 to a file
-  you pick: one row per tick while simulating, plus a row every time you move
-  the gizmo while paused
-- a **draggable split** between the 3D viewport and the monitor section: drag
-  the border to resize the monitor area (arrow keys nudge it, Shift for bigger
-  steps, double-click goes back to sizing it to the contents)
-- a **sidebar toggle** — the toolbar's *◫ Values* button (or the **H** key)
-  hides the sliders, number inputs and channel table so the 3D viewport and the
-  monitors get the full panel width
-- a live readout of all 17 channels
+## Requirements
 
-The values are streamed over a local TCP socket to a small Lua helper
-(`PhySim.lua`) which can either:
+| Item | Requirement |
+|------|-------------|
+| VSCode | 1.62 or later (`newWindow` for `physim.panel.openLocation` needs 1.85 or later) |
+| LifeBoatAPI | [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi). Tested with 0.0.33. Installed automatically along with PhySim |
+| OS | Windows / macOS (Apple Silicon and Intel). Linux is not supported |
 
-- inject them into the standard `input.getNumber(N)` table, or
-- be queried directly via `phys:position()`, `phys:rotation()` etc.
+## Installation
 
+Search for "**Stormworks Physics Sensor Sim**" in VSCode's Extensions view and install it, or run the following
+in Quick Open (Ctrl+P / Cmd+P):
 
+```
+ext install shannon-toppo.physim
+```
 
-## QuickStart
-1. Install [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi).
-2. Download the `.vsix` file from the [Release](https://github.com/Shannon-toppo/PhySim/releases) page and drag and drop it into VS Code.
-3. Open your Stormworks microcontroller project. The extension will offer to add `PhySim/lua/` to `lifeboatapi.stormworks.libs.libraryPaths` automatically.
-4. Add the following to your `Mymicrocontroller.lua`:
+### Installing from a .vsix on GitHub Releases
+
+For environments that cannot use the Marketplace, the same build is also distributed as a `.vsix` on
+[GitHub Releases](https://github.com/Shannon-toppo/PhySim/releases). Drag and drop the downloaded `.vsix` onto the
+Extensions view, or use **Install from VSIX...** in the Extensions view's "…" menu.
+
+- It is treated as the same extension as the Marketplace version (`shannon-toppo.physim`), so you do not need to install both.
+- Even when installed from a `.vsix`, VSCode's auto-update replaces it once a newer version is published on the Marketplace.
+  To stay on a specific version, turn off auto-update for PhySim in the Extensions view.
+- LifeBoatAPI is installed automatically from the Marketplace with a `.vsix` as well (in an offline environment, install it first).
+
+## Quick start
+
+1. Open a Stormworks microcontroller project (a LifeBoatAPI project).
+   The library path for autocompletion is added to `lifeboatapi.stormworks.libs.libraryPaths` automatically
+   (you can disable this with `physim.autoInjectLibraryPath`).
+2. Add the following to `MyMicrocontroller.lua`:
 
    ```lua
-   -- LifeBoatAPI's sandbox require() discards return values, so modules expose
-   -- themselves as globals. Use the pair below — NOT `phys = require("PhySim"):new()`.
+   -- LifeBoatAPI's sandboxed require() discards return values, so the
+   -- module publishes itself as a global.
+   -- Use the pair below instead of `phys = require("PhySim"):new()`.
    require("PhySim")
    phys = PhySim:new()
 
@@ -63,111 +63,288 @@ The values are streamed over a local TCP socket to a small Lua helper
    function onTick()
        local px, py, pz = input.getNumber(1), input.getNumber(2), input.getNumber(3)
        local rx, ry, rz = input.getNumber(4), input.getNumber(5), input.getNumber(6)
-       -- ... use values as if they came from a real physics sensor block ...
+       -- ... use them as if they came from a real physics sensor block ...
    end
    ```
 
-## Platform support
+   If you also use monitor touch input, set the starting channel to something other than 1 (see "Touch input and channel conflicts" below).
 
-- **Windows** — uses LifeBoatAPI's own simulator UI (`STORMWORKS_Simulator.exe`) unmodified.
-  PhySim's own monitor view can be switched on instead — see
-  [Built-in monitors on Windows](#built-in-monitors-on-windows-experimental) below.
-- **macOS** — LifeBoatAPI is Windows-only, so PhySim supplies the missing pieces
-  itself, including its own monitor simulation (**beta**). See below.
+3. Press **F6** to start the LifeBoatAPI simulator. The PhySim panel opens beside it
+   (set `physim.panel.openLocation` to `newWindow` to open it in a separate window).
+   Drag the gizmo and Lua receives the changing values in real time.
 
-### macOS — PhySim provides its own monitor simulation
+## Features
 
-> **This is a beta feature.** The monitor simulation is written and maintained
-> here rather than coming from upstream, so its rendering, protocol handling and
-> UI may still change in breaking ways between releases — including in ways that
-> require changes on your side.
+- 3D viewport with a translate / rotate gizmo
+- Sliders for linear and angular velocity, and for linear and angular acceleration. Position and rotation can also be entered as numbers, and attitudes can be saved and recalled as presets
+- **Simulate** toggle — integrates velocity and acceleration into position / rotation every tick, so the gizmo moves on its own
+- **Simulation speed** — slows the panel's Simulate / Play and the microcontroller's ticks by the same factor (see "Simulation speed" below)
+- **Trail and velocity arrow** — draws the positions passed through over the last N ticks as a line in the 3D scene,
+  and shows the current linear velocity as an arrow. Toggle them in the sidebar's "Visualization" section;
+  the trail length can be 2/5/10/30 seconds
+- **CSV logging** — writes CH1–17 to a CSV file (see "CSV logging" below)
+- **Resizable layout** — drag the border between the 3D viewport and the monitor view
+  to change the height of the monitor area
+- **Sidebar toggle** — the toolbar's "◫ Values" hides the sliders, number inputs and channel table on the right,
+  so the 3D viewport and monitor view can use the full panel width
+- Live display of all 17 channels
 
-LifeBoatAPI (`NameousChangey.lifeboatapi` 0.0.33) ships Windows binaries only, and
-without help its debug session does not start on macOS at all. PhySim works around
-that:
+Values are streamed over a local TCP socket to a small Lua helper (`PhySim.lua`) and can be used either as:
 
-- **luasocket** — LifeBoatAPI only ships Windows `.dll`s, so PhySim bundles
-  universal (arm64 + x86_64) luasocket binaries built for Lua 5.3 and puts them on
-  the Lua `cpath`.
-- **The simulator window** — `STORMWORKS_Simulator.exe` is a Windows executable and
-  cannot run on macOS at all, so **PhySim implements the monitor simulation itself**.
-  It listens on port 14238 speaking the same protocol the exe does, renders the
-  microcontroller's draw calls onto `<canvas>` inside the PhySim panel, and sends
-  touch input back. Shapes are rasterised onto the pixel grid rather than drawn as
-  anti-aliased paths, so they stay hard-edged like an in-game monitor. The monitor
-  scale follows the Zoom dropdown, a trackpad pinch, or Ctrl/Cmd + wheel.
-- **Multiple monitors** — a microcontroller wired to more than one monitor is
-  reproduced as-is. See [Multiple monitors](#multiple-monitors) below.
-- **Colours** — LifeBoatAPI gamma-corrects every colour in Lua to replicate what the
-  game does to monitors, which lifts dark tones a lot: a `setColor` of 30 arrives as
-  112, and anything from 217 up clips to white. PhySim draws the values as they
-  arrive, exactly as the exe would. Tick **True colour** in the Monitors header to
-  undo that correction and see the raw `setColor` values instead — off by default,
-  since the washed-out look is the faithful one.
+- injections into the standard `input.getNumber(N)` table
+- direct queries such as `phys:position()` and `phys:rotation()`
 
-Since that rendering is an independent reimplementation and not the game's own, it
-differs from the real simulator in a few ways:
+## Controls
 
-- text uses a hand-made 4x5 bitmap font, so glyphs are close to — but not identical
-  to — the in-game font
-- there is no terrain data behind `screen.drawMap`, which paints a flat ocean fill
-  as a placeholder
-- touch is primary-touch only (the "alt" touch values are always 0)
-- the exe's input/output panels are not reproduced — drive the channels from the
-  PhySim panel instead
+### Commands
 
-Verified against LifeBoatAPI 0.0.33. The full investigation is in
-[`doc/macos-support.md`](macos-support.md).
+Run these from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P).
+
+| Command | Description |
+|---------|-------------|
+| `PhySim: Open Physics Sensor Panel` | Opens the panel (for when it did not open automatically) |
+| `PhySim: Reset Gizmo` | Stops Simulate and resets position, rotation, velocity and acceleration to 0 |
+| `PhySim: Show Log` | Shows PhySim's log (for investigating problems) |
+
+### Shortcuts in the panel
+
+Disabled while a number input has focus.
+
+| Key / action | Description |
+|--------------|-------------|
+| **Space** | Toggle Simulate |
+| **W** / **E** | Switch the gizmo to translate / rotate mode |
+| **R** | Reset the gizmo |
+| **H** | Toggle the sidebar |
+| Left-drag (away from the gizmo) | Orbit the view |
+| Right-drag / wheel-drag | Pan the view |
+| Wheel | Zoom |
+
+On the border between the 3D view and the monitor view, drag to change the height, use the arrow keys (larger steps with Shift) to fine-tune,
+and double-click or press Home / End to return to the automatic size that fits the content.
+
+## Coordinate system
+
+Stormworks uses a **left-handed** world coordinate system:
+
+| Axis | Direction          |
+|------|--------------------|
+| X+   | East               |
+| Y+   | Up (vertical)      |
+| Z+   | North              |
+
+The gizmo viewport is rendered in Three.js's right-handed coordinates, with the camera placed so that
++Z extends **into the screen** (away from the viewer).
+This gives an intuitive "north is forward" layout.
+
+Rotations are output as radians in Three.js Euler XYZ order and normalized to **[-π, π)**.
+They wrap around instead of accumulating past one full turn.
+
+## Channel layout
+
+`PhySim:injectAsInputs(simulator, startCh)` writes 17 consecutive channels
+starting at `startCh` (default: `1`):
+
+| CH  | Quantity              | Unit        | Notes                                          |
+|-----|-----------------------|-------------|------------------------------------------------|
+| 1   | Position X            | m (east)    |                                                |
+| 2   | Position Y            | m (up)      |                                                |
+| 3   | Position Z            | m (north)   |                                                |
+| 4   | Rotation X            | rad         | Euler XYZ (intrinsic), normalized to [-π, π)   |
+| 5   | Rotation Y            | rad         | 〃                                             |
+| 6   | Rotation Z            | rad         | 〃                                             |
+| 7   | Linear velocity X     | m/tick      |                                                |
+| 8   | Linear velocity Y     | m/tick      |                                                |
+| 9   | Linear velocity Z     | m/tick      |                                                |
+| 10  | Angular velocity X    | rad/tick    |                                                |
+| 11  | Angular velocity Y    | rad/tick    |                                                |
+| 12  | Angular velocity Z    | rad/tick    |                                                |
+| 13  | Linear speed (abs)    | m/s         | √(vx²+vy²+vz²) × 60                           |
+| 14  | Angular speed (abs)   | RPS         | √(ax²+ay²+az²) × 60 / 2π                      |
+| 15  | Tilt.z                | rotation    | Tilt of local +Z (forward) from the horizontal plane |
+| 16  | Tilt.x                | rotation    | Tilt of local -X (left) from the horizontal plane    |
+| 17  | Compass               | rotation    | North=0, West=+0.25, South=±0.5, East=-0.25 (CCW seen from above) |
+
+"rotation" unit: 1.0 = one full turn (2π rad). Tilt ranges over [-0.25, +0.25] (±90° from horizontal).
+The compass wraps at ±0.5.
+
+### Touch input and channel conflicts
+
+Every tick, LifeBoatAPI writes the screen width, height, touch X, touch Y,
+alt touch X and alt touch Y into `input.getNumber(1..6)` (`Simulator._simulateDefaultInputs`).
+`phys:injectAsInputs(simulator, 1)` runs right after that and overwrites CH1-6, so
+**the monitor's touch coordinates never reach the microcontroller**. LifeBoatAPI gives
+priority to channels set from outside, so touch values no longer overwrite them afterwards.
+If you use touch coordinates, shift the starting channel.
+
+```lua
+phys:injectAsInputs(simulator, 7)   -- CH7-23. Leaves CH1-6 free for touch
+```
+
+`input.getBool(1)` (whether it is pressed) still works with a starting channel of 1, because PhySim
+does not write bools. Also, `_simulateDefaultInputs` only reads screen 1, so read touches on
+the second and later monitors yourself with `simulator:getTouchScreen(2)`
+(the same applies with `STORMWORKS_Simulator.exe`). Alt touch is not implemented in PhySim and is always 0.
+
+## Simulation speed
+
+The toolbar dropdown (×1 / ×0.5 / ×0.25 / ×0.1) lets you watch motion slowly.
+Two things slow down, both by the same factor:
+
+- Panel side: **Simulate** integration and **Play** playback
+- Microcontroller side: LifeBoatAPI's main loop (the interval between `onLBSimulatorTick` / `onTick` / `onDraw` calls)
+
+The amount advanced per tick stays at the slider values (m/tick, rad/tick), and the "×60" in CH13/14
+remains correct as one in-game second. To the microcontroller, it is the same as the game running slowly.
+Neither side is slowed alone, to keep the change in position and the velocity channels from disagreeing.
+
+The selected speed is saved per workspace and used in the next debug session as well.
+The dropdown turns yellow when it is not ×1, so you can tell if a previous setting is still in effect.
+
+Notes:
+
+- The speed reaches the microcontroller through `phys:injectAsInputs(simulator, …)`. If you only use
+  `phys:update()` without calling it, only the panel side slows down.
+- Closing the panel, calling `phys:close()`, or losing the connection to PhySim returns
+  the microcontroller side to 60 ticks/s.
+- On Windows, if you also change the tick rate from `STORMWORKS_Simulator.exe`, whichever
+  was changed last takes effect. PhySim only writes it when you change the speed and when it connects.
+- Pausing and single-stepping are not supported.
+
+## CSV logging
+
+Pressing **⬇ CSV Log** in the toolbar opens a dialog asking where to save, and recording starts
+as soon as you choose. Press it again to stop; you can open the file directly from the notification's **Open**.
+While recording, the row count is shown next to the button.
+
+Rows are written at two times. While **Simulate** / **Play** is running, one row per tick (1/60 s);
+while stopped, one row each time a sensor value changes through dragging the gizmo or entering a number.
+The sample interval is therefore not constant, so use the `time_s` or `game_time_s` column as the time axis.
+If you record at a reduced simulation speed, `game_time_s` is the one that matches the velocity columns.
+
+There are 21 columns: `sample,time_s,game_time_s,time_scale,ch1_pos_x,…,ch17_compass`.
+
+| Column    | Content                                          |
+|-----------|--------------------------------------------------|
+| `sample`  | Row number within the log (starting at 0)        |
+| `time_s`  | Seconds since recording started (real time)      |
+| `game_time_s` | In-game seconds since recording started (ticks ÷ 60). Does not advance while dragging when stopped |
+| `time_scale`  | Simulation speed when the row was recorded (1 = normal speed) |
+| `ch1`–`ch17` | Channel values. Same units and rounding (6 decimal places) as the table above |
+
+Line endings are CRLF and numbers use the same format as the values sent to Lua, so the file loads
+directly into Excel, pandas, gnuplot and so on.
+
+## Lua API
+
+After `require("PhySim")`, the global `PhySim` is the class table.
+
+| Method                                | Returns / effect                                     |
+|---------------------------------------|------------------------------------------------------|
+| `PhySim:new(host?, port?)`            | Construct and connect. Default: `127.0.0.1:14239`    |
+| `phys:update()`                       | Reads the socket. Call once per tick                 |
+| `phys:position()`                     | `x, y, z` (m)                                        |
+| `phys:rotation()`                     | `rx, ry, rz` (rad)                                   |
+| `phys:velocity()`                     | `vx, vy, vz` (m/tick)                                |
+| `phys:angularVelocity()`              | `ax, ay, az` (rad/tick)                              |
+| `phys:injectAsInputs(simulator, n?)`  | Writes CH `n..n+16` to `input.getNumber(...)`. The panel's simulation speed is also applied here |
+| `phys:tickRate()`                     | The panel's simulation speed (ticks/s, 60 = normal speed) |
+| `phys:close()`                        | Closes the socket and resets the tick rate to 60     |
+
+## Extension settings
+
+| Setting                              | Default    | Description                                                            |
+|--------------------------------------|------------|------------------------------------------------------------------------|
+| `physim.port`                        | 14239      | TCP port the extension listens on. If you change it, match it on the Lua side with `PhySim:new("127.0.0.1", port)` |
+| `physim.autoOpenOnSimulate`          | true       | Automatically open the panel when LifeBoatAPI's "Run Simulator" starts |
+| `physim.panel.openLocation`          | beside     | Where to open the panel. `beside` = split beside the active editor, `newWindow` = open in a separate window (requires VSCode 1.85 or later) |
+| `physim.autoInjectLibraryPath`       | true       | Add `<extension>/lua/` to `lifeboatapi.stormworks.libs.libraryPaths`   |
+| `physim.monitors.useBuiltInOnWindows` | false     | **Experimental, Windows only.** Draw the monitors in the PhySim panel instead of launching `STORMWORKS_Simulator.exe`. Ignored on macOS, where the built-in implementation is the only option |
+
+## Supported platforms
+
+- **Windows** — Uses LifeBoatAPI's own simulator UI (`STORMWORKS_Simulator.exe`) as is.
+  A setting lets you switch to PhySim's monitor view instead (see "Using PhySim's monitor view on Windows" below).
+- **macOS** — LifeBoatAPI is built for Windows. PhySim provides what is needed on macOS, so it can be used on macOS too.
+  The monitor view is PhySim's own implementation.
+
+### PhySim's monitor view
+
+On macOS, `STORMWORKS_Simulator.exe` cannot run, so the microcontroller's monitors are drawn inside the PhySim panel.
+Touch input can also be sent from the panel's monitors. Change the zoom with the Zoom dropdown,
+a trackpad pinch, or Ctrl/Cmd + wheel.
+
+**Rendering accuracy** — The drawing rules are derived from screenshots of verification scripts
+shown on in-game monitors (Stormworks v1.15.23). Tests confirm that lines, circles, fills, rectangles, text,
+`drawTextBox` wrapping and translucent colour blending reproduce every captured page
+(each size from 1x1 to 9x5) pixel for pixel.
+
+- Circles are drawn as 8- to 16-sided polygons depending on the radius, just as in the game
+- Text matches the game's font (all 95 characters of ASCII 32–126)
+- There is no anti-aliasing, so it shows the same blocky pixels as the game
+
+Details of the verification are in [`doc/ingame-findings.md`](https://github.com/Shannon-toppo/PhySim/blob/main/doc/ingame-findings.md) (Japanese).
+
+> **This is a beta.** The monitor view is implemented and maintained by PhySim rather than LifeBoatAPI,
+> so its UI and behaviour may change between releases.
+
+**Colour** — To match the game's look, LifeBoatAPI gamma-corrects every colour on the Lua side.
+Darker colours are shown brighter (a `setColor` of 30 becomes 112,
+and anything from 217 up becomes white). Like the exe, PhySim draws the values it receives as is.
+Turning on **True colour** in the Monitors header cancels this correction and shows the raw values
+passed to `setColor`. It is OFF by default (because the brighter look is the correct
+reproduction of the game).
+
+Compared with `STORMWORKS_Simulator.exe`, the following are not reproduced:
+
+- `screen.drawMap` has no terrain data behind it, so it fills with plain sea colour instead
+- Touch is primary only (alt touch values are always 0)
+- The exe's input/output panels. Drive the channels from the PhySim panel instead
+- Portrait monitors have not yet been checked against the game
+
+How macOS support works is described in [`doc/macos-support.md`](https://github.com/Shannon-toppo/PhySim/blob/main/doc/macos-support.md) (Japanese).
 
 ### Multiple monitors
 
-A microcontroller driving several monitors can be laid out in the panel exactly
-as it would be in game.
+A microcontroller wired to several monitors in the game can be reproduced as is in the panel.
 
-**+ Monitor** in the Monitors header adds a screen; each monitor's caption row
-carries a size dropdown (`1x1` through `9x5`), a **Portrait** checkbox for
-standing it on its end, and **✕** to take it off. The simulator runs `onDraw`
-once per powered-on monitor, with `screen.getWidth()` / `getHeight()` reporting
-the screen being drawn, so the microcontroller tells them apart the same way it
-does in game. Touch input is per monitor too, but only screen 1's reaches the
-composite inputs automatically — see
-[Touch input and channel conflicts](#touch-input-and-channel-conflicts).
+Add a screen with **+ Monitor** in the Monitors header, and in each monitor's caption row use the
+dropdown for the size (`1x1` to `9x5`), **Portrait** for vertical orientation, and **✕** to remove it.
+The simulator calls `onDraw` once for each active monitor, and inside it
+`screen.getWidth()` / `getHeight()` return the size of "the screen currently being drawn", so
+the microcontroller code can tell the screens apart the same way it does in the game. Touch input is
+also sent separately for each monitor, but only screen 1 flows into the composite inputs automatically
+(see "Touch input and channel conflicts" above).
 
-- Screens the script declares with `simulator:setScreen(...)` win. The panel
-  only fills in screen numbers the script never touches.
-- Screen 1 cannot be removed: it is LifeBoatAPI's default, and the only screen
-  whose size and touch reach the composite inputs
-  (`Simulator._simulateDefaultInputs`).
-- Removing is a power-off. Lua has no way to delete a screen, so a removed
-  monitor comes back if it is added again — or if the script calls `setScreen`
-  for it.
-- The layout is saved per workspace and restored on the next debug session.
-- Every monitor is drawn at the same zoom factor. Fitting each one separately
-  would make a 1x1 render larger than a 3x3, which hides their real sizes.
+- Screens the microcontroller script declares with `simulator:setScreen(...)` take precedence.
+  The panel's settings only apply to screen numbers the script does not touch.
+- Screen 1 cannot be removed. It is LifeBoatAPI's default screen and the only screen whose size and touch
+  flow into the composite inputs.
+- Removal is sent as a power-off. Lua has no way to delete a screen, so it comes back
+  if you add it again or if the script calls `setScreen`.
+- The layout is saved per workspace and restored in the next debug session.
+- The zoom is shared by all monitors. Fitting each screen separately would draw a 1x1 larger than a 3x3,
+  and you could no longer tell their relative sizes.
 
-This needs PhySim's own monitor rendering — always on macOS, and on Windows
-with `physim.monitors.useBuiltInOnWindows`. With the real
-`STORMWORKS_Simulator.exe`, configure monitors from the script's
-`simulator:setScreen` as before.
+This feature is only available when PhySim's monitor view is in use (always on macOS; on Windows with
+`physim.monitors.useBuiltInOnWindows`). In a normal Windows setup using `STORMWORKS_Simulator.exe`,
+configure the monitors from the script with `simulator:setScreen` as before.
 
-### Built-in monitors on Windows (experimental)
+### Using PhySim's monitor view on Windows (experimental)
 
-Set `physim.monitors.useBuiltInOnWindows` to `true` to render the microcontroller's
-monitors inside the PhySim panel on Windows too, instead of launching
-`STORMWORKS_Simulator.exe`. PhySim then suppresses the exe (through LifeBoatAPI's own
-`attachToExistingProcess` path) and answers on port 14238 in its place, so the two
-never compete for it. The setting takes effect on the next **F6** — no reload needed.
+Setting `physim.monitors.useBuiltInOnWindows` to `true` makes Windows skip launching
+`STORMWORKS_Simulator.exe` as well and draw the microcontroller's monitors inside the PhySim panel.
+It uses LifeBoatAPI's own setting for connecting to an already-running simulator,
+so the exe is not launched. The setting takes effect from the next **F6**; no window reload is needed.
 
-If it doesn't seem to do anything, run **PhySim: Show Log** from the command palette
-— the log says which renderer each F6 chose, whether port 14238 was actually claimed,
-and whether the `_simulator.lua` patches applied.
+If nothing changes after turning it ON, run **PhySim: Show Log** from the Command Palette.
+For each F6 the log shows which renderer was chosen, whether port 14238 was actually acquired, and whether
+the patch to `_simulator.lua` was applied.
 
-Off by default, and worth keeping off unless you want the panel: on Windows the real
-exe is the faithful renderer, and switching means accepting the same
-reimplementation caveats listed above — bitmap-font text, no terrain behind
-`screen.drawMap`, primary-touch only — plus the loss of the exe's input/output
-panels, which PhySim does not reproduce. Drive the channels from the PhySim panel
-instead.
+It is OFF by default. Choose between them based on the following:
+
+- **When PhySim's view suits you** — when you want to check shapes and text with rules fitted to in-game screenshots.
+- **When the exe suits you** — when you want `screen.drawMap` maps, alt touch, or the exe's input/output panels.
 
 ### Tip: using only the monitor simulation
 
@@ -180,225 +357,101 @@ Windows when `physim.monitors.useBuiltInOnWindows` is on).
 
 The physics sensor channels (CH1–17) then never reach the microcontroller, so
 moving the gizmo has no effect on your script — but neither does the CH1-6
-overwrite described in
-[Touch input and channel conflicts](#touch-input-and-channel-conflicts).
+overwrite described in "Touch input and channel conflicts" above.
 
-## Coordinate system
+## Network use
 
-Stormworks uses a **left-handed** world coordinate system:
+To exchange values with LifeBoatAPI's simulator, PhySim listens on TCP ports only within your own PC (`127.0.0.1`).
+It never communicates with any external server.
 
-| Axis | Direction          |
-|------|--------------------|
-| X+   | East               |
-| Y+   | Up (vertical)      |
-| Z+   | North              |
+| Port | When | Purpose |
+|------|------|---------|
+| 14239 (changeable with `physim.port`) | Always while the simulator is running | Sending sensor values from the panel to `PhySim.lua` |
+| 14238 | When PhySim's monitor view is used (macOS / the experimental Windows setting) | Receiving monitor drawing in place of `STORMWORKS_Simulator.exe` |
 
-The gizmo viewport renders Three.js' right-handed coordinates with the camera
-placed so that +Z visually extends **into the screen** (away from the viewer),
-matching the intuitive "north is forward" layout.
+Both are opened when the debug session starts and closed when it ends.
 
-Rotations are reported in radians using Three.js' Euler XYZ order, normalized
-to **[-π, π)** — a full spin wraps instead of accumulating.
+### Additions to the file LifeBoatAPI generates
 
-## Channel layout
+On every F6, PhySim adds a few lines for the connection to `_build/_simulator.lua`, which LifeBoatAPI
+generates in your workspace. It does not modify any of LifeBoatAPI's own files.
 
-`PhySim:injectAsInputs(simulator, startCh)` writes 17 consecutive channels
-starting at `startCh` (default `1`):
+## Troubleshooting
 
-| CH  | Quantity              | Unit        | Notes                                          |
-|-----|-----------------------|-------------|------------------------------------------------|
-| 1   | position X            | m (East)    |                                                |
-| 2   | position Y            | m (Up)      |                                                |
-| 3   | position Z            | m (North)   |                                                |
-| 4   | rotation X            | rad         | Euler XYZ (intrinsic), normalized to [-π, π)   |
-| 5   | rotation Y            | rad         | ″                                              |
-| 6   | rotation Z            | rad         | ″                                              |
-| 7   | linear vel. X         | m/tick      |                                                |
-| 8   | linear vel. Y         | m/tick      |                                                |
-| 9   | linear vel. Z         | m/tick      |                                                |
-| 10  | angular vel. X        | rad/tick    |                                                |
-| 11  | angular vel. Y        | rad/tick    |                                                |
-| 12  | angular vel. Z        | rad/tick    |                                                |
-| 13  | LinearVelocityABS     | m/s         | √(vx²+vy²+vz²) × 60                            |
-| 14  | AngularVelocityABS    | RPS         | √(ax²+ay²+az²) × 60 / 2π                       |
-| 15  | Tilt.z                | rotation    | tilt of local +Z (forward) from horizontal     |
-| 16  | Tilt.x                | rotation    | tilt of local -X (Left) from horizontal       |
-| 17  | compassBearing        | rotation    | N=0, W=+0.25, S=±0.5, E=-0.25 (CCW from above) |
+**The panel does not open when I press F6**
+- Check that `physim.autoOpenOnSimulate` is not `false`.
+  You can also open it manually with **PhySim: Open Physics Sensor Panel** from the Command Palette.
+- PhySim only reacts to the "Run Simulator" session that LifeBoatAPI's F6 starts.
+  Launching Lua from your own launch configuration is not covered.
+- **PhySim: Show Log** shows whether the session was detected and whether the patch was applied.
 
-"Rotation" unit: 1.0 = one full revolution (2π rad). Tilt ranges [-0.25, +0.25]
-(±90° from horizontal). Compass wraps at ±0.5.
+**"failed to bind TCP port 14239" is shown**
+- Another process (such as a leftover previous simulator) is using the port. Restart VSCode, or
+  set `physim.port` to a different number and match it on the Lua side with `PhySim:new("127.0.0.1", port)`.
 
-### Touch input and channel conflicts
+**`phys = require("PhySim"):new()` raises an error**
+- In LifeBoatAPI's sandbox, `require` does not return a value.
+  Split it into the two lines `require("PhySim")` and `phys = PhySim:new()` (see Quick start).
 
-Every tick, LifeBoatAPI writes the screen width, height, touch X/Y and alt touch
-X/Y into `input.getNumber(1..6)` (`Simulator._simulateDefaultInputs`).
-`phys:injectAsInputs(simulator, 1)` runs right after that and overwrites CH1-6,
-so **monitor touch coordinates never reach the microcontroller**. LifeBoatAPI
-also remembers channels written from outside and stops writing to them, so they
-do not come back. Move the start channel if you need touch coordinates:
+**Monitor touches do not reach the microcontroller**
+- `injectAsInputs(simulator, 1)` overwrites the touch values in CH1-6.
+  Shift the starting channel to 7 or similar (see "Touch input and channel conflicts").
 
-```lua
-phys:injectAsInputs(simulator, 7)   -- CH7-23, leaving CH1-6 for touch
-```
+**The monitor stays black on macOS**
+- If "could not listen on port 14238" is shown, a previous simulator is still holding
+  the port. Stop the debug session and press F6 again.
 
-`input.getBool(1)` (is the screen touched) keeps working at any start channel,
-since PhySim writes no booleans. And `_simulateDefaultInputs` only ever reads
-screen 1, so touch on a second monitor has to be read with
-`simulator:getTouchScreen(2)` yourself — the same as with
-`STORMWORKS_Simulator.exe`. Alt touch is not implemented in PhySim and is
-always 0.
+**Lua cannot find `require("PhySim")` / autocompletion does not work**
+- At run time PhySim adds the path automatically, so no setup is needed. If only autocompletion fails,
+  check that `physim.autoInjectLibraryPath` is enabled and reload the window.
 
-## Simulation speed
+## Known limitations
 
-The toolbar dropdown (×1 / ×0.5 / ×0.25 / ×0.1) slows things down so you can
-watch them change. Two clocks slow down, by the same factor:
-
-- the panel: **Simulate**'s integration and **Play**'s playback
-- the microcontroller: LifeBoatAPI's main loop (how often
-  `onLBSimulatorTick` / `onTick` / `onDraw` run)
-
-A tick still advances by the slider values (m/tick, rad/tick), and CH13/14's
-×60 is still correct — it is game seconds. Slowing only one clock would make
-the position change at a different rate than the velocity channels claim.
-
-The speed is saved per workspace and reused by the next debug session.
-Anything but ×1 turns the dropdown yellow, so a leftover setting is visible.
-
-Caveats:
-
-- The speed reaches the microcontroller through
-  `phys:injectAsInputs(simulator, …)`. A script that only calls
-  `phys:update()` gets a slowed panel but a 60 Hz microcontroller.
-- Closing the panel, calling `phys:close()`, or losing the PhySim connection
-  puts the microcontroller back to 60 ticks/s.
-- On Windows, if you also change the tick rate from `STORMWORKS_Simulator.exe`,
-  whichever changed it last wins. PhySim only writes the rate when you change
-  the speed and when it connects.
-- There is no pause or single-step.
-
-## CSV logging
-
-The toolbar's **⬇ CSV Log** button asks where to save and starts recording as
-soon as you pick a file; pressing it again stops and offers to **Open** the
-result. The row count sits next to the button while it runs.
-
-Rows are written from two places: one per tick (1/60 s) while **Simulate** or
-**Play** is running, and one every time you change the sensor values by hand
-— a gizmo drag, a typed pose — while it is not. The sample interval is
-therefore not constant; use the `time_s` or `game_time_s` column as the time
-axis. If you logged at a reduced simulation speed, `game_time_s` is the one
-that agrees with the velocity channels.
-
-The file has 21 columns, `sample,time_s,game_time_s,time_scale,ch1_pos_x,…,ch17_compass`:
-
-| Column       | Meaning                                                       |
-|--------------|---------------------------------------------------------------|
-| `sample`     | row index within the log, from 0                              |
-| `time_s`     | seconds since logging started (wall clock)                    |
-| `game_time_s`| game seconds since logging started (ticks ÷ 60); a drag while paused doesn't advance it |
-| `time_scale` | simulation speed the row was taken at (1 = real time)         |
-| `ch1`–`ch17` | channel values, same units and rounding (6 dp) as the table above |
-
-Records are CRLF-terminated and the numbers are formatted exactly as they go
-out to Lua, so the file drops straight into Excel, pandas or gnuplot.
-
-## Build and Use
-
-1. Install [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi).
-2. Build & launch PhySim (Extension Development Host: open this folder in VSCode and press **F5**, or `npx vsce package` and install the produced `.vsix`).
-3. Open your Stormworks microcontroller project. The extension will offer to add `PhySim/lua/` to `lifeboatapi.stormworks.libs.libraryPaths` automatically.
-4. Add the following to your `Mymicrocontroller.lua`:
-
-   ```lua
-   -- LifeBoatAPI's sandbox require() discards return values, so modules expose
-   -- themselves as globals. Use the pair below — NOT `phys = require("PhySim"):new()`.
-   require("PhySim")
-   phys = PhySim:new()
-
-   function onLBSimulatorTick(simulator, ticks)
-       phys:update()
-       phys:injectAsInputs(simulator, 1)   -- writes input.getNumber(1..17)
-   end
-
-   function onTick()
-       local px, py, pz = input.getNumber(1), input.getNumber(2), input.getNumber(3)
-       local rx, ry, rz = input.getNumber(4), input.getNumber(5), input.getNumber(6)
-       -- ... use values as if they came from a real physics sensor block ...
-   end
-   ```
-
-5. Press **F6** to start the LifeBoatAPI simulator. The PhySim panel opens
-   beside it (or in a separate window if `physim.panel.openLocation` is set to
-   `newWindow`). Drag the gizmo — your Lua sees the values change live.
-
-## Lua API
-
-After `require("PhySim")`, the global `PhySim` is the class table.
-
-| Method                                | Returns / Effect                                  |
-|---------------------------------------|---------------------------------------------------|
-| `PhySim:new(host?, port?)`            | Construct & connect. Defaults: `127.0.0.1:14239`. |
-| `phys:update()`                       | Drain socket. Call once per tick.                 |
-| `phys:position()`                     | `x, y, z` (m)                                     |
-| `phys:rotation()`                     | `rx, ry, rz` (rad)                                |
-| `phys:velocity()`                     | `vx, vy, vz` (m/tick)                             |
-| `phys:angularVelocity()`              | `ax, ay, az` (rad/tick)                           |
-| `phys:injectAsInputs(simulator, n?)`  | Write CH `n..n+16` into `input.getNumber(...)`. Also applies the panel's simulation speed. |
-| `phys:tickRate()`                     | The panel's simulation speed in ticks/s (60 = real time). |
-| `phys:close()`                        | Close socket and put the tick rate back to 60.    |
-
-## Extension settings
-
-| Setting                              | Default | Description                                                    |
-|--------------------------------------|---------|----------------------------------------------------------------|
-| `physim.port`                        | 14239   | TCP port the extension listens on.                             |
-| `physim.autoOpenOnSimulate`          | true    | Open the panel when LifeBoatAPI's "Run Simulator" starts.      |
-| `physim.panel.openLocation`          | beside  | Where to place the panel when it opens. `beside` = split beside the active editor; `newWindow` = open in a separate floating window (requires VSCode 1.85+). |
-| `physim.autoInjectLibraryPath`       | true    | Add `<extension>/lua/` to `lifeboatapi.stormworks.libs.libraryPaths`. |
-| `physim.monitors.useBuiltInOnWindows` | false  | **Experimental, Windows only.** Draw the monitors in the PhySim panel instead of launching `STORMWORKS_Simulator.exe`. Ignored on macOS, where the built-in monitors are the only option. |
-
-## Development & tests
-
-```bash
-npm install          # also vendors three.js into media/three/
-npm run compile      # extension host (tsc → out/)
-npm run lint         # eslint
-npm run check:media  # strict JSDoc typecheck of the webview modules
-npm test             # node:test suites in test/
-```
-
-The test suite covers the wire protocol (encode → real `PhySim.lua` parser
-round-trip, running Lua 5.3 via [fengari](https://fengari.io/)) and the
-CH13–17 derived-channel math, including a **JS⇄Lua parity test** that keeps
-`media/channels.js` and `PhySim.lua:injectAsInputs` in agreement.
-
-## Out of scope (v0.1)
-
-- Scripted sensor manipulation
-- Multiple microcontroller debug sessions sharing one panel
+- Linux is not supported
+- Operating the sensor cannot be automated from a script
+- One panel cannot be shared between several microcontroller debug sessions
+- Pausing and single-stepping the simulation are not supported
+- For features PhySim's monitor view does not reproduce, see "PhySim's monitor view"
 
 ## Planned features
 
-The following are under consideration. None are implemented yet — listed order does not imply priority.
+The following features are under consideration. None are implemented yet, and the order does not indicate priority.
+For features implemented so far, see the [CHANGELOG](https://github.com/Shannon-toppo/PhySim/blob/main/CHANGELOG.md) (Japanese).
 
-1. ~~**Direct numeric input for position / rotation + preset save/recall**~~
+- **Multiple physics sensors** —
+  Supports using several physics sensor blocks in one MC. Place several gizmo targets and
+  map each to its own channel range.
+- **Gamepad input** —
+  Operate the gizmo with a connected gamepad / joystick. Allows smoother input than mouse dragging
+  in dynamic scenarios.
 
-   ~~Today position and rotation can only be set by dragging the gizmo. Adding numeric input fields (like the velocity sliders already have) and the ability to save named states such as "level flight" or "45° bank" would remove the need to manually re-align the gizmo for repeated tests.~~ → Implemented in v0.2.0
+## Feedback
 
-2. ~~**Continuous physics mode (integrate velocity into position)**~~
+Please send bug reports and requests to [GitHub Issues](https://github.com/Shannon-toppo/PhySim/issues).
+For bugs, including the output of **PhySim: Show Log** and your OS and LifeBoatAPI versions speeds up the investigation.
 
-   ~~Currently velocity and position are independent: setting a velocity does not move the gizmo. A toggle that adds `velocity * dt` to position each tick would let PID controllers and attitude-stabilization MCs be debugged against time-varying CH1–3, much closer to in-game behavior.~~ → Implemented in v0.2.0
+If a problem occurs while PhySim is installed, please report it to PhySim's Issues first, not to LifeBoatAPI.
 
-3. ~~**Trail / velocity-vector visualization**~~
+To contribute, including how to build and run the tests, see [CONTRIBUTING.md](https://github.com/Shannon-toppo/PhySim/blob/main/CONTRIBUTING.md) (Japanese).
 
-   ~~Render the last N ticks of the object's path as a trail in the 3D scene, plus an arrow showing the current velocity vector. Especially useful in combination with the continuous physics mode above.~~ → Implemented in v0.4.5
+## License
 
-4. **Multiple physics sensor support**
-   Some microcontrollers use more than one physics sensor block. Allowing multiple gizmo targets, each mapped to its own channel range, would cover this use case.
+PhySim is released under the [MIT License](https://github.com/Shannon-toppo/PhySim/blob/main/LICENSE).
 
-5. **Gamepad input**
-   Drive the gizmo with an attached gamepad / joystick. More fluid than mouse dragging for dynamic scenarios.
+### Third-party software
 
-6. ~~**CSV logging of channel values**~~
+PhySim bundles the following software.
 
-   ~~Stream CH1–17 values to a CSV file for offline analysis or graph plotting.~~ → Implemented in v0.4.6
+| Software | Purpose | License |
+|----------|---------|---------|
+| [three.js](https://threejs.org/) r160 (`three.module.js`, `OrbitControls`, `TransformControls`) | The panel's 3D view and gizmo | MIT License — Copyright © 2010-2023 three.js authors |
+| [LuaSocket](https://github.com/lunarmodules/luasocket) 3.0 (macOS binaries) | TCP communication from Lua on macOS | MIT License — Copyright © 2004-2013 Diego Nehab |
+
+The full LuaSocket license is bundled in the extension at `luasocket/darwin/LICENSE`.
+For the full three.js license, see [the three.js repository](https://github.com/mrdoob/three.js/blob/r160/LICENSE).
+
+### Disclaimer
+
+PhySim is an unofficial extension developed by an individual. It is not affiliated with Geometa, the developer of
+Stormworks: Build and Rescue, or with the author of Stormworks Lua with LifeBoatAPI.
+Stormworks is a trademark of Geometa.

@@ -17,3 +17,5 @@ media/package.json
 **/*.ts
 .gitignore
 images/icon.svg
+Animation.gif
+CONTRIBUTING.md

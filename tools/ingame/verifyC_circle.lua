@@ -1,8 +1,8 @@
--- PhySim 実機検証 C: drawCircle のアルゴリズム特定
--- 実機は r=1..7 が中点円と一致し、r=22 はどちらのモデルでも再現できなかった。
--- 半径を刻んで、一致しなくなる境目と大半径での規則を出す。
--- 接続と操作は A と同じ。右半分タップ=次 / 左半分=前。左上に "C<n>"。
--- 目盛は緑: 上端・下端・左端に 5px ごと 1px、10px ごと 2px。
+-- PhySim in-game verification C: pinning down the drawCircle algorithm
+-- In game, r=1..7 matched a midpoint circle, and neither model reproduced r=22.
+-- Step the radius to find where they stop matching and the rule at large radii.
+-- Wiring and controls as in A. Tap right half = next / left half = previous. "C<n>" top-left.
+-- Green rulers on top, bottom and left edges: 1px every 5px, 2px every 10px.
 S=screen
 P=1
 N=9
@@ -31,8 +31,8 @@ function R()
   S.setColor(255,255,255)
 end
 
--- 4象限に1つずつ。中心は (25,25) (70,25) (25,70) (70,70)。
--- r<=22 なら隣と重ならない。
+-- One per quadrant. Centres (25,25) (70,25) (25,70) (70,70).
+-- With r<=22 neighbours don't overlap.
 function G(a,b,c,d,fill)
   local v={{25,25,a},{70,25,b},{25,70,c},{70,70,d}}
   for i=1,4 do
@@ -46,21 +46,21 @@ function onDraw()
   S.drawClear()
   R()
 
-  if P==1 then G(8,9,10,11)          -- 中点円と一致するか
+  if P==1 then G(8,9,10,11)          -- does it match a midpoint circle?
   elseif P==2 then G(12,13,14,15)
   elseif P==3 then G(16,17,18,19)
-  elseif P==4 then G(20,21,22,22)    -- 右下も r=22 (P5 の中心ずらしと比較する基準)
+  elseif P==4 then G(20,21,22,22)    -- bottom-right is r=22 too (reference for P5's centre shifts)
   elseif P==5 then
-    -- 同じ r=22 で中心の小数部だけ変える
+    -- Same r=22, only the centre's fractional part changes
     S.drawCircle(25.25,25,22)
     S.drawCircle(70.5,25,22)
     S.drawCircle(25,70.5,22)
     S.drawCircle(70.75,70.75,22)
   elseif P==6 then
-    -- 半径の小数部が形に効くか (A3 で r=2.6 と 2.7 が同形だった)
+    -- Does the radius' fractional part affect the shape? (A3: r=2.6 and 2.7 looked identical)
     G(15,15.25,15.5,15.75)
-  elseif P==7 then S.drawCircle(48,48,32)   -- 大半径 1つだけ
-  elseif P==8 then S.drawCircle(48,48,44)   -- 画面いっぱい
-  else G(12,13,14,15,true)                  -- 塗りは輪郭と同じ規則か
+  elseif P==7 then S.drawCircle(48,48,32)   -- one large radius
+  elseif P==8 then S.drawCircle(48,48,44)   -- fills the screen
+  else G(12,13,14,15,true)                  -- do fills follow the same rule as outlines?
   end
 end

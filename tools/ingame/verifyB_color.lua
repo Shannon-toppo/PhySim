@@ -1,4 +1,4 @@
--- PhySim 実機検証 B: 色・アルファ・矩形・文字 (接続と操作は A と同じ)
+-- PhySim in-game verification B: colour, alpha, rectangles, text (wiring and controls as in A)
 S=screen
 P=1
 N=7
@@ -10,7 +10,7 @@ function onTick()
     P=(P-1+(input.getNumber(3)>input.getNumber(1)/2 and 1 or -1))%N+1
   end
   q=t
-  -- 保険: number ch32 のダイヤルでページ直接指定
+  -- Fallback: a dial on number ch32 selects the page directly
   local n=input.getNumber(32)
   if n>=1 then P=math.min(N,math.floor(n)) end
 end
@@ -18,7 +18,7 @@ end
 function R()
   S.setColor(0,90,0)
   for x=0,S.getWidth()-1,5 do S.drawRectF(x,0,1,x%10==0 and 2 or 1) end
-  -- 下端にも目盛。2本ないとスクリーンショットの縦方向が校正できない
+  -- Rulers on the bottom edge too. Without two, the screenshot's vertical axis can't be calibrated
   for x=0,S.getWidth()-1,5 do S.drawRectF(x,S.getHeight()-2,1,x%10==0 and 2 or 1) end
   S.drawText(4,3,"B"..P)
   S.setColor(255,255,255)
@@ -30,12 +30,12 @@ function onDraw()
   R()
 
   if P==1 then
-    -- 不透明グレイ 0..255 を 17 刻み。モニターの伝達特性。
+    -- Opaque grey 0..255 in steps of 17. The monitor's transfer curve.
     for i=0,15 do
       S.setColor(i*17,i*17,i*17)
       S.drawRectF(i*6+1,12,5,24)
     end
-    -- 原色も同じ刻み
+    -- Primaries in the same steps
     for i=0,15 do
       S.setColor(i*17,0,0) S.drawRectF(i*6+1,40,5,12)
       S.setColor(0,i*17,0) S.drawRectF(i*6+1,54,5,12)
@@ -43,7 +43,7 @@ function onDraw()
     end
 
   elseif P==2 then
-    -- 黒地に白 a=0..255、次に灰地(128)の上
+    -- White on black at a=0..255, then on grey (128)
     for i=0,15 do
       S.setColor(255,255,255,i*17)
       S.drawRectF(i*6+1,12,5,20)
@@ -53,7 +53,7 @@ function onDraw()
       S.setColor(255,255,255,i*17)
       S.drawRectF(i*6+1,40,5,20)
     end
-    -- 白地に黒 a=0..255
+    -- Black on white at a=0..255
     S.setColor(255,255,255) S.drawRectF(1,68,95,20)
     for i=0,15 do
       S.setColor(0,0,0,i*17)
@@ -61,19 +61,19 @@ function onDraw()
     end
 
   elseif P==3 then
-    -- a=128 を n 回重ね。累積するか
+    -- a=128 overlaid n times. Does it accumulate?
     for n=1,5 do
       for _=1,n do
         S.setColor(255,255,255,128)
         S.drawRectF(n*17-10,12,14,24)
       end
     end
-    -- a=0 は本当に何もしないか
+    -- Does a=0 really do nothing?
     S.setColor(255,255,255) S.drawRectF(1,44,95,24)
     S.setColor(0,0,0,0)     S.drawRectF(6,48,20,16)
     S.setColor(255,0,0,0)   S.drawRectF(36,48,20,16)
     S.setColor(0,0,0,8)     S.drawRectF(66,48,20,16)
-    -- 低アルファ側。白 a=1..128
+    -- Low-alpha end. White a=1..128
     local a={1,2,4,8,16,32,64,128}
     for i=1,8 do
       S.setColor(255,255,255,a[i])
@@ -81,29 +81,29 @@ function onDraw()
     end
 
   elseif P==4 then
-    -- drawClear はアルファを無視して置換するか
+    -- Does drawClear ignore alpha and replace?
     S.setColor(255,0,0) S.drawRectF(10,20,76,30)
     S.setColor(0,0,255) S.drawText(20,60,"UNDER")
     S.setColor(0,255,0,128) S.drawClear()
     S.setColor(255,255,255) S.drawText(4,3,"B4")
 
   elseif P==5 then
-    -- 枠の四隅が二重ブレンドされるか
+    -- Are the frame's four corners blended twice?
     S.setColor(255,255,255,128)
     S.drawRect(6,12,40,30)
-    -- 退化: 幅1 / 高さ1 / 幅0 / 1x1
+    -- Degenerate: width 1 / height 1 / width 0 / 1x1
     S.drawRect(56,12,1,30)
     S.drawRect(62,12,30,1)
     S.drawRect(62,20,0,10)
     S.drawRect(62,26,1,1)
-    -- 整数と半端の枠
+    -- Integer and fractional frames
     S.setColor(255,255,255)
     S.drawRect(6,52,20,20)
     S.drawRect(40.5,52.5,20,20)
     S.drawRect(70.25,52,20,20)
 
   elseif P==6 then
-    -- drawRectF の座標規則。緑点が x と x+w
+    -- drawRectF coordinate rule. Green dots mark x and x+w
     local c={{20,3},{20.5,3},{20.5,3.5},{20.25,3},{20.75,3},{19.5,3}}
     for i=1,6 do
       local y=i*13+2
@@ -113,14 +113,14 @@ function onDraw()
       S.setColor(255,255,255)
       S.drawRectF(c[i][1],y,c[i][2],7)
     end
-    -- 負側とゼロ幅
+    -- Negative side and zero width
     S.setColor(255,255,255)
     S.drawRectF(-0.5,86,4,7)
     S.drawRectF(60,86,0,7)
     S.drawRectF(70,86,0.4,7)
 
   else
-    -- 文字送り・行送り・グリフ
+    -- Character advance, line advance, glyphs
     S.setColor(255,255,255)
     S.drawText(0,10,"ABCDEFGHIJKLMNOPQRST")
     S.drawText(0,16,"abcdefghijklmnopqrst")

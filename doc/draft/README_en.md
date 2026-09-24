@@ -20,7 +20,6 @@ INS, autopilot logic and the like without launching the game.
 | VSCode | 1.62 or later (`newWindow` for `physim.panel.openLocation` needs 1.85 or later) |
 | LifeBoatAPI | [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi). Tested with 0.0.33. Installed automatically along with PhySim |
 | OS | Windows / macOS (Apple Silicon and Intel). Linux is not supported |
-| Stormworks itself | Not required |
 
 ## Installation
 
@@ -346,6 +345,19 @@ It is OFF by default. Choose between them based on the following:
 
 - **When PhySim's view suits you** — when you want to check shapes and text with rules fitted to in-game screenshots.
 - **When the exe suits you** — when you want `screen.drawMap` maps, alt touch, or the exe's input/output panels.
+
+### Tip: using only the monitor simulation
+
+If all you want is the monitors, you don't need to add `require("PhySim")`,
+`PhySim:new()`, `phys:update()` or `phys:injectAsInputs()` to your script. The
+monitor view only listens for LifeBoatAPI's own draw commands on port 14238 and
+is independent of `PhySim.lua`. Press **F6** as usual and your existing project's
+monitors appear in the PhySim panel, touch input included (always on macOS; on
+Windows when `physim.monitors.useBuiltInOnWindows` is on).
+
+The physics sensor channels (CH1–17) then never reach the microcontroller, so
+moving the gizmo has no effect on your script — but neither does the CH1-6
+overwrite described in "Touch input and channel conflicts" above.
 
 ## Network use
 

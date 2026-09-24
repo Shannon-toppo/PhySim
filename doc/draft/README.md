@@ -20,7 +20,6 @@ PIDコントローラー・INS・オートパイロットなどのロジック�
 | VSCode | 1.62 以上（`physim.panel.openLocation` の `newWindow` は 1.85 以上） |
 | LifeBoatAPI | [Stormworks Lua with LifeBoatAPI](https://marketplace.visualstudio.com/items?itemName=NameousChangey.lifeboatapi)。0.0.33 で動作確認済み。PhySim をインストールすると自動で一緒に入ります |
 | OS | Windows / macOS（Apple Silicon・Intel）。Linux は非対応 |
-| Stormworks 本体 | 不要 |
 
 ## インストール
 
@@ -347,6 +346,19 @@ F6ごとにどちらの描画を選んだか、14238番ポートを実際に確�
 
 - **PhySim の表示が向いている場合** — 図形や文字を、実機のスクリーンショットに合わせた規則で確かめたいとき。
 - **exe が向いている場合** — `screen.drawMap` の地図、alt タッチ、exe の入出力パネルを使いたいとき。
+
+### Tip: モニターシミュレーションだけ使う場合
+
+モニター表示だけが目的なら、マイコンのスクリプトに `require("PhySim")`・`PhySim:new()`・
+`phys:update()`・`phys:injectAsInputs()` を書き足す必要はありません。モニター表示は
+LifeBoatAPI 自身の描画命令を14238番ポートで受け取っているだけで、`PhySim.lua` とは
+独立しています。いつもどおり **F6** を押せば、既存のプロジェクトのまま PhySim パネルに
+モニターが表示され、タッチ入力も届きます（macOS 常時 / Windows は
+`physim.monitors.useBuiltInOnWindows` が有効な場合）。
+
+この場合 physics sensor のチャンネル（CH1–17）はマイコンに届かないので、ギズモを
+動かしてもスクリプトには影響しません。その代わり、上記「タッチ入力とチャンネルの競合」
+で説明している CH1-6 の上書きも起きません。
 
 ## 通信について
 

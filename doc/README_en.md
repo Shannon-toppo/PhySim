@@ -164,6 +164,20 @@ reimplementation caveats listed above — bitmap-font text, no terrain behind
 panels, which PhySim does not reproduce. Drive the channels from the PhySim panel
 instead.
 
+### Tip: using only the monitor simulation
+
+If all you want is the monitors, you don't need to add `require("PhySim")`,
+`PhySim:new()`, `phys:update()` or `phys:injectAsInputs()` to your script. The
+monitor view only listens for LifeBoatAPI's own draw commands on port 14238 and
+is independent of `PhySim.lua`. Press **F6** as usual and your existing project's
+monitors appear in the PhySim panel, touch input included (always on macOS; on
+Windows when `physim.monitors.useBuiltInOnWindows` is on).
+
+The physics sensor channels (CH1–17) then never reach the microcontroller, so
+moving the gizmo has no effect on your script — but neither does the CH1-6
+overwrite described in
+[Touch input and channel conflicts](#touch-input-and-channel-conflicts).
+
 ## Coordinate system
 
 Stormworks uses a **left-handed** world coordinate system:

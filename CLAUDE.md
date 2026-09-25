@@ -195,7 +195,8 @@ bounded by width only, as it has always been; tall layouts scroll.
 ## Monitor rasterising (read before changing a shape)
 
 `media/raster.js` is fitted to **screenshots of the real game** (Stormworks
-v1.15.23; Apple M5 and RTX 4070Ti give identical pixels), not to any other
+v1.15.23; Apple M5 and RTX 4070Ti give identical pixels, except on
+a vertex exactly on a 1/512px tie — see below), not to any other
 implementation. `doc/ingame-findings.md` has the evidence. `doc/monitor-rendering.md`
 explains the resulting rules front to back, with pixel examples. The monitor is
 plain GPU rasterisation, and four of its rules look like bugs and are not:
@@ -229,7 +230,7 @@ an epsilon to the coordinates.
 `test/ingame.test.mjs` runs each verification card page (the `.lua` file
 itself, in fengari via `test/helpers/cardRunner.mjs`) through `raster.js` and
 `pixelFont.js` and compares against `test/fixtures/ingame-raster.json`, the
-lit pixels of 62 screenshot pages. A page's key also names its monitor
+lit pixels of 68 screenshot pages. A page's key also names its monitor
 (`tools/ingame/analysis/screen.mjs`): `D4` is a 3x3 (96x96), `E2_5x3` page
 E2 on a 5x3 (160x96); card E's pages cover every size from 1x1 to 9x5, and
 the rules hold unchanged on all of them. To extend it, add a page to
@@ -237,7 +238,10 @@ the rules hold unchanged on all of them. To extend it, add a page to
 (`sips -s format png`, named like the key), add it to `PAGES` in
 `tools/ingame/analysis/export-fixture.mjs` and run it
 (`<macDir> <winDir> <out.json>`); it refuses a page whose mean calibration
-residual is over 0.1px or whose two platforms disagree. Nothing is masked:
+residual is over 0.1px or whose two platforms disagree. F3 is left out for
+that reason: on exact 1/512px ties the Mac rounds up (= `Math.round`, what
+`snap()` does) but the RTX 4070Ti goes either way, which no rule in script
+coordinates predicts yet (`doc/ingame-findings.md` section 9). Nothing is masked:
 the green rulers and labels stay under the brightness threshold.
 
 Fit changes to the screenshots, never to another monitor emulator: the rules

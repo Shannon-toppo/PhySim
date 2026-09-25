@@ -307,6 +307,12 @@ F9、F7・F8、F4〜F6 の順。F7・F8 は Mac と Windows の両方あると�
   切ってから厳密に描く）がゲームの float の誤差と合わない可能性がある。合わなければ
   その線だけ PhySim の側を直す。
 
+> 2026-09-25 撮影（Mac・Windows とも F1–F9）。F1・F2・F4・F9 と F6 の線は予測どおり
+> 誤差0。F5・F6 で塗り円の縁の向きが逆だった（下の辺の行が点く）ので直した。F3 は
+> 塗りも 1/256 に丸めることを確かめたが、ちょうど 1/512 のタイで Mac と Windows が
+> 17 画素食い違い、fixture から外している。F7・F8 は `media/blend.js` の予測どおり。
+> `doc/ingame-findings.md` の9節。
+
 ## 撮影したスクリーンショットの解析
 
 `analysis/` に解析ツールが入っている。緑の目盛を較正ターゲットにして
@@ -326,7 +332,8 @@ node tools/ingame/analysis/export-fixture.mjs <macPngDir> <winPngDir> test/fixtu
 ```
 
 `export-fixture.mjs` は図形と文字のページ（A1–A6, B5–B7, C1–C4, C7–C9, D1–D8,
-D10–D12 は必須、E と F は見つかったもの全部。F7・F8 は色のページなので除く）の点灯画素を `test/ingame.test.mjs` 用の
+D10–D12 は必須、E と F は見つかったもの全部。F7・F8 は色のページ、F3 は
+プラットフォームで食い違うので除く）の点灯画素を `test/ingame.test.mjs` 用の
 fixture に書き出す。どこもマスクしない（緑の目盛と文字は輝度 137 以下で、閾値 150
 に届かない）。両プラットフォームが1画素でも食い違うか、較正残差の平均が 0.1px を
 超えたページがあれば書き出さずに止まる。

@@ -4,6 +4,13 @@ PhySim の主な変更点です。各バージョンの詳細は [GitHub Release
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-09-25
+
+### 修正
+- 自前モニター表示の描画を、新しく撮った実機のスクリーンショットに合わせて2点直しました。1x1〜9x5 のモニターで撮った86ページを、画素単位で再現します。
+  - 塗り円（`drawCircleF`）の水平な辺がちょうど画素の行に乗ったとき、下の辺の行は描かれ、上の辺の行は描かれないようにしました。以前は逆でした。
+  - 頂点がちょうど 1/512px の境目に乗ったときの丸め方を、Windows（GeForce RTX 4070Ti）の実機に合わせました。向きはモニターの大きさで変わります。Mac の実機とは、この場合に1画素ずれることがあります。
+
 ### 変更
 - README をマーケットプレイス向けに書き直しました。変更履歴（この CHANGELOG）と開発者向けの内容（CONTRIBUTING.md）を README から分けました。
 - `physim.monitors.useBuiltInOnWindows` の説明文を今の実装に合わせました。
@@ -115,7 +122,8 @@ VS Code Marketplace で公開した最初のバージョンです（プレビュ
 
 - 最初の公開版。
 
-[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/1.1.1...HEAD
+[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/1.1.2...HEAD
+[1.1.2]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.2
 [1.1.1]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.1
 [1.1.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.0
 [1.0.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.0.0

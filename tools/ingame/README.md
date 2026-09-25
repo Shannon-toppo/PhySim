@@ -11,7 +11,7 @@ Stormworks 本体でモニター描画規則を確認するためのマイクロ
 | `verifyD_open.lua` | 6,390 | D1–D12: A〜C で決まらなかった点 |
 | `verifyE_sizes.lua` | 4,887 | E1–E7: 3x3 以外のモニター、負の半径の辺数 |
 | `verifyF_gaps.lua` | 6,503 | F1–F9: 規則を式で埋めているだけの範囲 |
-| `verifyG_ties.lua` | 3,401 | G1–G3: ちょうど 1/512px のタイの丸め |
+| `verifyG_ties.lua` | 3,401 | G1–G3: 格子のちょうど中間（1/512px）の丸め |
 
 どれもゲーム内エディタの文字数制限（現在 8,192 字）に収まる。コメントごと貼って構わない。
 どれも ASCII だけで書いてある（ゲーム側は2バイト文字を扱えない）。`test/ingame.test.mjs` が確かめている。
@@ -310,28 +310,28 @@ F9、F7・F8、F4〜F6 の順。F7・F8 は Mac と Windows の両方あると�
 
 > 2026-09-25 撮影（Mac・Windows とも F1–F9）。F1・F2・F4・F9 と F6 の線は予測どおり
 > 誤差0。F5・F6 で塗り円の縁の向きが逆だった（下の辺の行が点く）ので直した。F3 は
-> 塗りも 1/256 に丸めることを確かめたが、ちょうど 1/512 のタイで Mac と Windows が
-> 17 画素食い違い、fixture から外している。F7・F8 は `media/blend.js` の予測どおり。
-> `doc/ingame-findings.md` の9節。
+> 塗りも 1/256 に丸めることを確かめたが、格子のちょうど中間（1/512）で Mac と
+> Windows が 17 画素食い違い、fixture から外している。F7・F8 は `media/blend.js` の
+> 予測どおり。`doc/ingame-findings.md` の9節。
 
-### G1–G3 — ちょうど 1/512px のタイ
+### G1–G3 — 格子のちょうど中間（1/512px）
 
 F3 で、頂点がちょうど 1/512px（1/256 の格子の真ん中）に乗ると、Apple M5 は必ず
 上へ丸め、RTX 4070Ti は値によって上にも下にも丸めた（55+1/512・61+1/512 は下、
-59+1/512 は上）。4点しかないので規則が決まらない。G はこのタイを全部の列・行で
+59+1/512 は上）。4点しかないので規則が決まらない。G はこの中間の値を全部の列・行で
 1つずつ測る。
 
-どのプローブも、タイが片方へ丸まったときだけ決まった画素（3画素の縦か横の棒、
+どのプローブも、中間の値が片方へ丸まったときだけ決まった画素（3画素の縦か横の棒、
 G1・G2 の e と G3 は1画素）を点け、もう片方なら何も描かない。読み取りは
 `analysis/ties.mjs` がやる（下の「解析」）。
 
-| ページ | タイの値 | プローブ |
+| ページ | 中間の値 | プローブ |
 |---|---|---|
 | G1 | x = k + 1/512（k = 3〜W−3） | a: drawRectF の左端（行 8〜10）、b: 右端（12〜14）、c: drawTriangleF の縦の辺（16〜18）、d: a を画面の下（H−7〜H−5）でもう一度、e: F3 と同じ幅4の矩形で左右の端を両方（行 20〜24、k mod 5 で段をずらす） |
 | G2 | y = k − 1/512（k = 11〜H−3） | G1 を縦にしたもの。a: 上端（列 4〜6）、b: 下端（8〜10）、c: drawTriangleF の横の辺（12〜14）、d: a を画面の右（W−6〜W−4）で、e: 高さ4の矩形の上下（列 17〜21） |
 | G3 | x = k + 1/512 | drawCircleF r=3 の左右の頂点。6段で 3〜W−7 の値を全部 |
 
-y のタイを k − 1/512 に置くのは、塗りの行が floor(y) から始まるので、k + 1/512 の
+y の中間の値を k − 1/512 に置くのは、塗りの行が floor(y) から始まるので、k + 1/512 の
 ほうは上に丸めても下に丸めても同じ行になり、見えないから。
 
 分けるもの:
@@ -352,7 +352,7 @@ y のタイを k − 1/512 に置くのは、塗りの行が floor(y) から始�
 **同じ大きさで少なくとも2つの幅**（例: 3x3 と 5x3）があると、浮動小数の誤差の仮説を
 確かめられる。
 
-`test/ties.test.mjs` が、カードを `media/raster.js` でタイを上・下にずらして描き、
+`test/ties.test.mjs` が、カードを `media/raster.js` で中間の値を上・下にずらして描き、
 `ties.mjs` が全部「上」・全部「下」と読むことを6種類の大きさで確かめている。
 
 > 2026-09-25 撮影（Windows は G1・G2 を8種類の大きさと G3、Mac は 3x3 の G1〜G3）。
@@ -379,7 +379,7 @@ node tools/ingame/analysis/rectify.mjs <shot.png> <out.ppm>   # 復元 + 較正�
 node tools/ingame/analysis/show.mjs    <shot.png> 150 28 76   # 点灯画素をASCIIで表示
 node tools/ingame/analysis/compare.mjs <shot.png> <expected.ppm> # 期待画像との差分
 node tools/ingame/analysis/export-fixture.mjs <macPngDir> <winPngDir> test/fixtures/ingame-raster.json
-node tools/ingame/analysis/ties.mjs    <G1.png> [G2.png G3.png ...]  # G のタイの向きを読む
+node tools/ingame/analysis/ties.mjs    <G1.png> [G2.png G3.png ...]  # G の丸めの向きを読む
 ```
 
 `ties.mjs` は値ごとにプローブの答え（U = 上、D = 下）を並べ、同じ値でプローブが
@@ -393,9 +393,10 @@ D10–D12 は必須、E・F・G は見つかったもの全部。F7・F8 は色�
 点灯画素を `test/ingame.test.mjs` 用の fixture に書き出す。どこもマスクしない（緑の
 目盛と文字は輝度 137 以下で、閾値 150 に届かない）。両プラットフォームが1画素でも
 食い違うか、較正残差の平均が 0.1px を超えたページがあれば書き出さずに止まる。
-例外はタイを置いたページ（F3・G1〜G3）で、Windows の撮影を使い、Mac との差を
-表示する。Windows の撮影が無ければそのページは飛ばす。3x3 のページは `G1` と
-`G1_3x3` のどちらの名前でも同じページとして扱う（キーは Windows 側の名前）。
+例外は頂点を格子のちょうど中間に置いたページ（F3・G1〜G3）で、Windows の撮影を
+使い、Mac との差を表示する。Windows の撮影が無ければそのページは飛ばす。3x3 の
+ページは `G1` と `G1_3x3` のどちらの名前でも同じページとして扱う（キーは Windows
+側の名前）。
 `RECTIFY_DEBUG=1` を付けると、残差 0.1px を超えた目盛を個別に表示する。
 
 入力は PNG（`sips -s format png a.jpg --out a.png` で変換）。

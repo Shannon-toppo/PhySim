@@ -30,7 +30,10 @@ const PAGES = ["A1", "A2", "A3", "A4", "A5", "A6", "B5", "B6", "B7",
 // Card E is taken as it comes: E1-E4 on whatever monitors were shot
 // ("E2_2x1.png", "E2_9x5.png", ...; a bare "E2.png" is a 3x3), E5-E7 on a 3x3.
 // Card F likewise, whichever pages were shot; F7 and F8 are colour pages.
-const OPTIONAL = /^(E[1-7]|F[1-69])$/;
+// F3 is left out: Apple M5 and RTX 4070Ti disagree on its exact 1/512px ties
+// (17 pixels, doc/ingame-findings.md section 9), and which one the panel
+// should follow is still being investigated.
+const OPTIONAL = /^(E[1-7]|F[124569])$/;
 const TH = 150;
 // rectify.mjs samples the middle half of each logical pixel (0.25..0.75), so
 // a fit off by well under 0.25px cannot pull a sample into the neighbour.

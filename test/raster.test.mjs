@@ -180,6 +180,22 @@ test("fillCircle: rows outside the screen are skipped", () => {
   for (const [, y] of c.calls) assert.ok(y >= 0 && y < BOUNDS.height);
 });
 
+test("fillCircle: a horizontal edge on a sample row lights it at the bottom, not the top (F5, F6)", () => {
+  // A 10-gon's edges between vertices 2-3 and 7-8 are horizontal. Put the
+  // bottom one on row 44 and the top one on row 6: the game lights the whole
+  // bottom edge (13 pixels) and none of the top one.
+  const big = { width: 96, height: 96 };
+  const s10 = Math.sin(0.4 * Math.PI);
+  const bottom = runCollector();
+  fillCircle(bottom.fillRun, 25, 44 - 20 * s10, 20, big);
+  assert.deepEqual(cols(bottom, 44), Array.from({ length: 13 }, (_, i) => 19 + i));
+  assert.deepEqual(cols(bottom, 45), []);
+  const top = runCollector();
+  fillCircle(top.fillRun, 70, 6 + 20 * s10, 20, big);
+  assert.deepEqual(cols(top, 6), []);
+  assert.equal(cols(top, 7).length > 13, true);
+});
+
 test("fillTriangle: samples the bottom-left corner, so the far edges come in (A6)", () => {
   const c = runCollector();
   fillTriangle(c.fillRun, 4, 4, 12, 4, 4, 12, BOUNDS);

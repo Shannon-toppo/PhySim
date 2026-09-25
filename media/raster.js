@@ -318,14 +318,18 @@ function fillConvex(fillRun, pts, yOff, ySign, bounds) {
 }
 
 /**
- * Filled circle: the same polygon, sampled at each pixel's top-left corner.
+ * Filled circle: the same polygon, sampled at each pixel's top-left corner,
+ * nudged up. A horizontal edge lying exactly on a row of sample points
+ * lights that row when it is the bottom edge and not when it is the top one
+ * (F5, F6 in doc/ingame-findings.md) — the same way round as the triangle
+ * and rectangle fills, even though their sample sits a row lower.
  * @param {FillRun} fillRun
  * @param {number} cx @param {number} cy @param {number} r
  * @param {Bounds} bounds
  */
 export function fillCircle(fillRun, cx, cy, r, bounds) {
   if (!finite(cx, cy, r)) return;
-  fillConvex(fillRun, circlePolygon(cx, cy, r), 0, 1, bounds);
+  fillConvex(fillRun, circlePolygon(cx, cy, r), 0, -1, bounds);
 }
 
 /**

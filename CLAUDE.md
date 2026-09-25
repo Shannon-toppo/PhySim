@@ -318,4 +318,8 @@ Touch all of these in lockstep, or things will silently desync:
 
 ## Distribution
 
-The extension is distributed as a `.vsix` produced by `npx vsce package` (private channel; LifeBoatAPI is pulled from the public marketplace via `extensionDependencies`). Bump `version` in `package.json` for each rebuild — VSCode uses it to detect updates on re-install.
+The extension is published on the VS Code Marketplace as `shannon-toppo.physim` (first published 2026-09-24, still flagged `"preview": true`). LifeBoatAPI is pulled from the Marketplace too, via `extensionDependencies`.
+
+Releases are uploaded by hand: `npx vsce package`, then upload the `.vsix` at https://marketplace.visualstudio.com/manage (the extension's "…" menu → Update). Marketplace refuses a version it already has, so bump `version` in `package.json` for every release. The same `.vsix` can also be attached to a GitHub Release.
+
+There is no `vsce publish` from the CLI or CI yet. Azure DevOps retires global PATs on 2026-12-01, so don't set one up; automating this means `vsce publish --azure-credential` (vsce >= 2.26.1) with a user-assigned managed identity federated to GitHub Actions. The locally resolved vsce is 2.15.0, which is too old for that flag.

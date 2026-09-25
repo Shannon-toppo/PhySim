@@ -94,6 +94,25 @@ test("strokeLine: endpoints are snapped to 1/256px, so 1/1024 off a tie is the t
   }
 });
 
+test("fills: a vertex exactly on a 1/512px tie rounds the RTX 4070Ti's way, which depends on the monitor (F3, G1, G2)", () => {
+  // drawRectF(k + 1/512, y, 0.5, 1) lights column k when the tie rounds
+  // down and nothing when it rounds up.
+  const col = (k, width) => {
+    const c = runCollector();
+    fillRectangle(c.fillRun, k + 1 / 512, 4, 0.5, 1, { width, height: 32 });
+    return c.set.has(`${k},4`) ? "down" : "up";
+  };
+  // 96 wide (F3): 55 and 61 down, 59 up. 64 wide: 2/64 is exact, nothing
+  // perturbs the tie, and half-to-even takes every one down.
+  assert.deepEqual([55, 59, 61].map(k => col(k, 96)), ["down", "up", "down"]);
+  assert.deepEqual([55, 59, 61].map(k => col(k, 64)), ["down", "down", "down"]);
+  // y ties just under a whole number (k - 1/512) went up on every monitor:
+  // drawRectF(4, 34 - 1/512, 1, 0.5) then lights nothing.
+  const y = runCollector();
+  fillRectangle(y.fillRun, 4, 34 - 1 / 512, 1, 0.5, { width: 96, height: 96 });
+  assert.equal(y.calls.length, 0);
+});
+
 test("strokeLine: the diamond owns some corners — top for x-major, top and right for y-major (D7)", () => {
   // Pixel (4,10)'s diamond has its top corner at (4, 9.5). A vertical line
   // leaving from there lights it; one leaving from the bottom corner doesn't.

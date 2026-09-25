@@ -4,8 +4,10 @@
 // The card is rendered through media/raster.js — every probe at once, so a
 // probe that spills onto another's pixel shows up too — with its tie t
 // pushed 1/4096px up and then down (for G2, whose ties are at k - t, the
-// other way round). The decoder must read all-up and all-down. With t exactly on the tie, raster.js's Math.round rounds up, as
-// the Apple M5 does (doc/ingame-findings.md section 9).
+// other way round). The decoder must read all-up and all-down. With t
+// exactly on the tie it must read what raster.js's own tie model predicts
+// (RULES in ties.mjs), which is how the RTX 4070Ti rounded every tie on the
+// card (doc/ingame-findings.md section 10).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -62,10 +64,11 @@ for (const [w, h] of SIZES) {
       assert.ok(list.length > 0);
       // G2's ties are at k - t, so a larger t pushes them down.
       const flip = page === 2 ? { up: "down", down: "up" } : { up: "up", down: "down" };
-      for (const [nudge, want] of [[1 / 4096, flip.up], [-1 / 4096, flip.down], [0, "up"]]) {
+      const model = RULES["raster.js (RTX 4070Ti model)"];
+      for (const [nudge, want] of [[1 / 4096, () => flip.up], [-1 / 4096, () => flip.down], [0, model]]) {
         const lit = render(cardWith(nudge), page, w, h);
         const got = decode(list, (x, y) => lit.has(`${x},${y}`));
-        const wrong = got.filter(r => r.answer !== want).map(r => `${r.probe}@${r.value}:${r.answer}`);
+        const wrong = got.filter(r => r.answer !== want(r)).map(r => `${r.probe}@${r.value}:${r.answer}`);
         assert.deepEqual(wrong, [], `t nudged by ${nudge}`);
       }
     });

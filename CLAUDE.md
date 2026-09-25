@@ -36,7 +36,7 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `trail.test.mjs` — `media/trail.js`: the trail buffer keeps the newest points in draw order, drops sub-millimetre samples, survives a capacity change, and the velocity-arrow length stays inside the scene for any speed.
 - `blend.test.mjs` — `media/blend.js`: packed words really are R,G,B,A in memory order (get this backwards and every monitor colour comes out with red and blue swapped), and blending reproduces the game's measured values (alpha blended too, shown as rgb × alpha).
 - `ingame.test.mjs` — **the monitor against the real game**: runs each page of `tools/ingame/verify*.lua` (fengari, `test/helpers/cardRunner.mjs`) through `raster.js` + `pixelFont.js` and compares with `test/fixtures/ingame-raster.json`, lit pixels from Stormworks screenshots. See "Monitor rasterising" below.
-- `ties.test.mjs` — card G (`tools/ingame/verifyG_ties.lua`, the 1/512px tie probes) against its reader `tools/ingame/analysis/ties.mjs`: the card rendered with its tie nudged up and then down must decode to all-up and all-down, on six monitor sizes, so the probe layout in the Lua and in the reader can't drift apart.
+- `ties.test.mjs` — card G (`tools/ingame/verifyG_ties.lua`, the 1/512px tie probes) against its reader `tools/ingame/analysis/ties.mjs`: the card rendered with its tie nudged up and then down must decode to all-up and all-down, and exactly on the tie to what `snapUnits()` predicts, on six monitor sizes, so the probe layout in the Lua and in the reader can't drift apart.
 - `raster.test.mjs` — `media/raster.js`: one test per rasterising rule (each tagged with the page that shows it), plus the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
 - `monitorConfig.test.mjs` — `media/monitorConfig.js`: the size table round-trips through pixels in both orientations, `nextScreenNumber` reuses a removed slot, and `fitScale` picks one factor for all monitors (and never 0).
 - `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, the tick/send de-duplication, and `game_time_s` counting ticks rather than wall clock.
@@ -200,7 +200,7 @@ v1.15.23; Apple M5 and RTX 4070Ti give identical pixels, except on
 a vertex exactly on a 1/512px tie — see below), not to any other
 implementation. `doc/ingame-findings.md` has the evidence. `doc/monitor-rendering.md`
 explains the resulting rules front to back, with pixel examples. The monitor is
-plain GPU rasterisation, and four of its rules look like bugs and are not:
+plain GPU rasterisation, and five of its rules look like bugs and are not:
 
 - **Lines use the diamond-exit rule** on 1/256px-snapped endpoints. Pixel
   (px, py) owns the diamond around the *integer* point (px, py) in script
@@ -222,6 +222,16 @@ plain GPU rasterisation, and four of its rules look like bugs and are not:
   circles — do not "unify" them.
 - **drawRect is four lines**, so it covers (w+1)×(h+1) pixels, and a zero
   width still draws.
+- **A vertex exactly on a 1/512px tie rounds the way float32 arithmetic
+  sends it**, not by any rule in script coordinates. `snapUnits()` replays
+  the RTX 4070Ti's vertex path (projection with the half-pixel offset in it,
+  a separate multiply and add for the viewport, round half to even) with the
+  monitor's width for x and height for y, so the same value can round up on
+  a 96-wide monitor and down on a 64-wide one. It was fitted to card G
+  (1418 ties on eight sizes, none wrong). Do not replace it with
+  `Math.round`: that is what the Apple M5 does for x only, and PhySim
+  follows Windows, where most players are. The Mac's y ties fit no model yet
+  (`doc/ingame-findings.md` section 10).
 
 `strokeLine` works in integers of 1/256px so every tie is exact; endpoints
 beyond ±65536px are clipped first to keep the products inside 2^53. Fill ties
@@ -231,7 +241,7 @@ an epsilon to the coordinates.
 `test/ingame.test.mjs` runs each verification card page (the `.lua` file
 itself, in fengari via `test/helpers/cardRunner.mjs`) through `raster.js` and
 `pixelFont.js` and compares against `test/fixtures/ingame-raster.json`, the
-lit pixels of 68 screenshot pages. A page's key also names its monitor
+lit pixels of 86 screenshot pages. A page's key also names its monitor
 (`tools/ingame/analysis/screen.mjs`): `D4` is a 3x3 (96x96), `E2_5x3` page
 E2 on a 5x3 (160x96); card E's pages cover every size from 1x1 to 9x5, and
 the rules hold unchanged on all of them. To extend it, add a page to
@@ -239,10 +249,11 @@ the rules hold unchanged on all of them. To extend it, add a page to
 (`sips -s format png`, named like the key), add it to `PAGES` in
 `tools/ingame/analysis/export-fixture.mjs` and run it
 (`<macDir> <winDir> <out.json>`); it refuses a page whose mean calibration
-residual is over 0.1px or whose two platforms disagree. F3 is left out for
-that reason: on exact 1/512px ties the Mac rounds up (= `Math.round`, what
-`snap()` does) but the RTX 4070Ti goes either way, which no rule in script
-coordinates predicts yet (`doc/ingame-findings.md` section 9). Nothing is masked:
+residual is over 0.1px or whose two platforms disagree — except the tie
+pages (F3, G1-G3, `TIE_PAGES`), which take the RTX 4070Ti shot and print how
+far the Apple M5 one is from it. Card G is read with
+`tools/ingame/analysis/ties.mjs <shot.png>`, which lists each tie's direction
+and its distance from `snapUnits()`. Nothing is masked:
 the green rulers and labels stay under the brightness threshold.
 
 Fit changes to the screenshots, never to another monitor emulator: the rules

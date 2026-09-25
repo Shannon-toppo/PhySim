@@ -7,7 +7,9 @@
 // here by hand and painted as 1x1 fills / horizontal runs instead.
 //
 // The rules are fitted to screenshots of the real game (Stormworks v1.15.23,
-// Apple M5 and RTX 4070Ti give identical pixels) — see doc/ingame-findings.md.
+// Apple M5 and RTX 4070Ti give identical pixels except on a vertex exactly
+// half-way between two 1/256px steps, where this follows the RTX 4070Ti) —
+// see doc/ingame-findings.md.
 // They are GPU rasterisation rules, and three of them look like bugs:
 //
 // - A line is drawn with the diamond-exit rule on a half-open diamond (edges
@@ -43,10 +45,35 @@
  * sit 1/1024px off a tie draw as the tie does (D6 in doc/ingame-findings.md).
  * The game's half-pixel offset is a whole number of 1/256ths, so snapping
  * script coordinates gives the same grid.
- * @param {number} v
+ *
+ * Which way a vertex exactly on a tie (k + 1/512) goes is decided by the
+ * float32 arithmetic on the way to the screen, so it is modelled rather than
+ * rounded: the RTX 4070Ti's vertex path, fitted to card G (every x and y tie
+ * on eight monitor sizes, 1418 of them, none wrong). The projection carries
+ * the half-pixel offset, the viewport is a separate multiply and add, and the
+ * fixed-point conversion rounds half to even. `size` is the monitor's width
+ * for x and its height for y — the error depends on it: on a 64 wide monitor
+ * 59 + 1/512 rounds down, on a 96 wide one up.
+ *
+ * The Apple M5 takes another path (every x tie up, y ties by value in a
+ * pattern no model here reproduces), so on a Mac an exact tie can land one
+ * pixel off. Anything not within float32 error of a tie comes out the same.
+ * @param {number} v @param {number} size
+ * @returns {number} whole 1/256ths of a pixel, in script coordinates
  */
-function snap(v) {
-  return Math.round(v * 256) / 256;
+export function snapUnits(v, size) {
+  const f = Math.fround;
+  const scale = f(2 / size), half = f(size / 2);
+  const ndc = f(f(f(v) * scale) + f(-1 + f(0.5 * scale)));
+  const screen = f(f(ndc * half) + half);        // pixel centres at +0.5
+  const u = screen * 256 - 128;                  // both exact in double
+  const lo = Math.floor(u), frac = u - lo;
+  return frac > 0.5 || (frac === 0.5 && lo % 2 !== 0) ? lo + 1 : lo;
+}
+
+/** snapUnits() as a coordinate. @param {number} v @param {number} size */
+function snap(v, size) {
+  return snapUnits(v, size) / 256;
 }
 
 /** @param {...number} v */
@@ -182,8 +209,8 @@ export function strokeLine(plot, x1, y1, x2, y2, bounds) {
     [x1, y1, x2, y2] = c;
   }
   // Snapped integer coordinates, 1/256px units.
-  const X1 = Math.round(x1 * SUB), Y1 = Math.round(y1 * SUB);
-  const X2 = Math.round(x2 * SUB), Y2 = Math.round(y2 * SUB);
+  const X1 = snapUnits(x1, bounds.width), Y1 = snapUnits(y1, bounds.height);
+  const X2 = snapUnits(x2, bounds.width), Y2 = snapUnits(y2, bounds.height);
   if (X1 === X2 && Y1 === Y2) return;
 
   const xMajor = Math.abs(X2 - X1) >= Math.abs(Y2 - Y1);
@@ -290,7 +317,7 @@ export function strokeCircle(plot, cx, cy, r, bounds) {
  * @param {Bounds} bounds
  */
 function fillConvex(fillRun, pts, yOff, ySign, bounds) {
-  pts = pts.map(([x, y]) => [snap(x), snap(y)]);
+  pts = pts.map(([x, y]) => [snap(x, bounds.width), snap(y, bounds.height)]);
   let yMin = Infinity, yMax = -Infinity;
   for (const [, y] of pts) {
     if (y < yMin) yMin = y;
@@ -385,7 +412,8 @@ export function strokeRectangle(plot, x, y, w, h, bounds) {
  */
 export function fillRectangle(fillRun, x, y, w, h, bounds) {
   if (!finite(x, y, w, h)) return;
-  const x0 = snap(x), x1 = snap(x + w), y0 = snap(y), y1 = snap(y + h);
+  const x0 = snap(x, bounds.width), x1 = snap(x + w, bounds.width);
+  const y0 = snap(y, bounds.height), y1 = snap(y + h, bounds.height);
   const left = Math.ceil(Math.min(x0, x1)), right = Math.ceil(Math.max(x0, x1));
   const top = Math.max(0, Math.floor(Math.min(y0, y1)));
   const bot = Math.min(bounds.height, Math.floor(Math.max(y0, y1)));

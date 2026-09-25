@@ -6,15 +6,17 @@
 //   node tools/ingame/analysis/ties.mjs <G1.png> [G2.png G3.png ...]
 //
 // Prints, per page, the answers by value and probe, and how far they are
-// from the two rules that fit part of F3: every tie up (Apple M5, and
-// PhySim's Math.round) and round-half-to-even. On these ties half-to-even
-// means x = k + 1/512 always down and y = k - 1/512 always up.
+// from three rules: every tie up (the Apple M5's x ties), round-half-to-even
+// (x = k + 1/512 always down, y = k - 1/512 always up), and media/raster.js,
+// whose snapUnits() models the RTX 4070Ti's vertex path and was fitted to
+// this card (doc/ingame-findings.md section 10).
 //
 // test/ties.test.mjs renders the card through media/raster.js with the ties
 // pushed up and then down and checks this file reads back all-up and
 // all-down, so the layout here and in the Lua can't drift apart.
 import { rectify } from "./rectify.mjs";
 import { parsePage } from "./screen.mjs";
+import { snapUnits } from "../../../media/raster.js";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -23,6 +25,7 @@ import { pathToFileURL } from "node:url";
  * @property {string} probe  a, b, ... as in the card's comments
  * @property {"x"|"y"} axis
  * @property {number} value  the tie, in script coordinates
+ * @property {number} size   the monitor's width for x, height for y
  * @property {"up"|"down"} litWhen
  * @property {[number, number][]} pixels
  */
@@ -37,7 +40,8 @@ const T = 1 / 512;
 export function probes(page, W, H) {
   /** @type {Probe[]} */
   const out = [];
-  const add = (probe, axis, value, litWhen, pixels) => out.push({ probe, axis, value, litWhen, pixels });
+  const add = (probe, axis, value, litWhen, pixels) =>
+    out.push({ probe, axis, value, size: axis === "x" ? W : H, litWhen, pixels });
   const rows = (x, y0, n) => Array.from({ length: n }, (_, i) => /** @type {[number, number]} */ ([x, y0 + i]));
   const cols = (x0, y, n) => Array.from({ length: n }, (_, i) => /** @type {[number, number]} */ ([x0 + i, y]));
   if (page === 1) {
@@ -89,9 +93,10 @@ export function decode(list, lit) {
   });
 }
 
-/** What the two candidate rules say for one tie. */
+/** What each candidate rule says for one tie. */
 export const RULES = {
-  "all up (Apple M5, Math.round)": () => "up",
+  "raster.js (RTX 4070Ti model)": (/** @type {Probe} */ p) => snapUnits(p.value, p.size) / 256 > p.value ? "up" : "down",
+  "all up": () => "up",
   "half to even": (/** @type {Probe} */ p) => {
     const s = p.value * 256, f = Math.floor(s);
     return f % 2 === 0 ? "down" : "up";

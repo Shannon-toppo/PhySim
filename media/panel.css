@@ -362,6 +362,28 @@ body.monitors-sized #monitors { max-height: none; }
   touch-action: none;
 }
 
+/* The stand-alone monitor window (media/monitors.html): the monitor section
+   is the whole page, so it drops the panel grid, the 50vh cap and the border
+   that separated it from the viewport. */
+body.monitor-window {
+  display: flex;
+  flex-direction: column;
+}
+
+body.monitor-window #monitors {
+  flex: 1 1 auto;
+  max-height: none;
+  border-top: none;
+}
+
+#monitors-placeholder { display: none; }
+
+body.monitor-window.no-monitors #monitors-placeholder {
+  display: block;
+  padding: 12px;
+  opacity: 0.6;
+}
+
 /* "Values" toolbar toggle: collapse the whole right column so the viewport and
    the monitors get the full panel width. The column has to go to 0 as well as
    the element to display:none — a hidden element in a 240px track would leave

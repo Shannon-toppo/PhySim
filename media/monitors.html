@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<!-- The stand-alone monitor window (physim.monitors.openInNewWindow), served
+     by PhysSimPanelManager after substituting the double-brace placeholder
+     tokens, like panel.html. The #monitors block mirrors the one in
+     panel.html: monitorDom.js looks its elements up by id, so keep the ids in
+     step. -->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="{{csp}}" />
+<title>PhySim Monitors</title>
+<link rel="stylesheet" href="{{panelCss}}" />
+</head>
+<body class="monitor-window no-monitors">
+  <div id="monitors-placeholder">Waiting for the microcontroller's monitors. Start the simulator (F6).</div>
+
+  <div id="monitors" class="hidden">
+    <div class="monitors-head">
+      <span>Monitors</span>
+      <div class="monitor-opts">
+        <button type="button" id="monitor-add" title="Declare another monitor for the microcontroller. The simulator runs onDraw once per screen, so screen.getWidth() tells them apart.">&#43; Monitor</button>
+        <label class="monitor-check" title="Undo the gamma correction LifeBoatAPI applies in Lua and draw the raw screen.setColor values. Off = the washed-out colours the game and the Windows simulator show.">
+          <input type="checkbox" id="monitor-truecolour" />
+          <span>True colour</span>
+        </label>
+        <label class="monitor-zoom">
+          <span>Zoom</span>
+          <select id="monitor-zoom" title="Monitor scale. Fit = largest integer factor that fits the window width. Pinch the trackpad (or Ctrl/Cmd + wheel) over a monitor to zoom.">
+            <option value="fit" selected>Fit</option>
+            <option value="2">2&#215;</option>
+            <option value="4">4&#215;</option>
+            <option value="8">8&#215;</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div id="monitors-list"></div>
+  </div>
+
+  <script type="module" nonce="{{nonce}}" src="{{monitorsJs}}"></script>
+</body>
+</html>

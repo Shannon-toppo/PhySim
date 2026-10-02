@@ -49,6 +49,10 @@
         "title": "PhySim: Open Physics Sensor Panel"
       },
       {
+        "command": "physim.openMonitors",
+        "title": "PhySim: Open Monitors in New Window"
+      },
+      {
         "command": "physim.reset",
         "title": "PhySim: Reset Gizmo"
       },
@@ -87,6 +91,11 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically add the bundled lua/ folder to lifeboatapi.stormworks.libs.libraryPaths for LifeBoatAPI workspaces."
+        },
+        "physim.monitors.openInNewWindow": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show the microcontroller's monitors in a separate window instead of below the 3D view. The window opens with the first monitor of each simulator session; closing it puts the monitors back into the panel until the next **F6**. `PhySim: Open Monitors in New Window` opens it on demand.\n\nOnly applies when PhySim draws the monitors (always on macOS, on Windows with `physim.monitors.useBuiltInOnWindows`). Moving it into its own window needs VSCode 1.85+; older versions open it as a tab."
         },
         "physim.monitors.useBuiltInOnWindows": {
           "type": "boolean",

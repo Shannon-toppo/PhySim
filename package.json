@@ -1,7 +1,7 @@
 {
   "name": "physim",
   "displayName": "Stormworks Physics Sensor Sim",
-  "description": "Simulate Stormworks physics sensor outputs from a 3D gizmo, alongside LifeBoatAPI's microcontroller debugger.",
+  "description": "%description%",
   "version": "1.1.2",
   "publisher": "shannon-toppo",
   "icon": "images/icon.png",
@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/Shannon-toppo/PhySim#readme",
   "engines": {
-    "vscode": "^1.62.0"
+    "vscode": "^1.73.0"
   },
   "capabilities": {
     "untrustedWorkspaces": {
@@ -36,6 +36,7 @@
     "url": "https://github.com/Shannon-toppo/PhySim.git"
   },
   "main": "./out/extension.js",
+  "l10n": "./l10n",
   "extensionDependencies": [
     "NameousChangey.lifeboatapi"
   ],
@@ -46,19 +47,19 @@
     "commands": [
       {
         "command": "physim.open",
-        "title": "PhySim: Open Physics Sensor Panel"
+        "title": "%command.open.title%"
       },
       {
         "command": "physim.openMonitors",
-        "title": "PhySim: Open Monitors in New Window"
+        "title": "%command.openMonitors.title%"
       },
       {
         "command": "physim.reset",
-        "title": "PhySim: Reset Gizmo"
+        "title": "%command.reset.title%"
       },
       {
         "command": "physim.showLog",
-        "title": "PhySim: Show Log"
+        "title": "%command.showLog.title%"
       }
     ],
     "configuration": {
@@ -67,12 +68,12 @@
         "physim.port": {
           "type": "number",
           "default": 14239,
-          "description": "TCP port the extension listens on for the PhySim Lua client."
+          "description": "%config.physim.port.description%"
         },
         "physim.autoOpenOnSimulate": {
           "type": "boolean",
           "default": true,
-          "description": "Auto-open the panel when LifeBoatAPI Simulate (F6) starts."
+          "description": "%config.physim.autoOpenOnSimulate.description%"
         },
         "physim.panel.openLocation": {
           "type": "string",
@@ -81,26 +82,26 @@
             "newWindow"
           ],
           "enumDescriptions": [
-            "Open the panel beside the active editor in the current window (default).",
-            "Open the panel in a new floating window (requires VSCode 1.85+)."
+            "%config.physim.panel.openLocation.enumDescriptions.beside%",
+            "%config.physim.panel.openLocation.enumDescriptions.newWindow%"
           ],
           "default": "beside",
-          "description": "Where to place the Physics Sensor panel when it opens."
+          "description": "%config.physim.panel.openLocation.description%"
         },
         "physim.autoInjectLibraryPath": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically add the bundled lua/ folder to lifeboatapi.stormworks.libs.libraryPaths for LifeBoatAPI workspaces."
+          "description": "%config.physim.autoInjectLibraryPath.description%"
         },
         "physim.monitors.openInNewWindow": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Show the microcontroller's monitors in a separate window instead of below the 3D view. The window opens with the first monitor of each simulator session; closing it puts the monitors back into the panel until the next **F6**. `PhySim: Open Monitors in New Window` opens it on demand.\n\nOnly applies when PhySim draws the monitors (always on macOS, on Windows with `physim.monitors.useBuiltInOnWindows`). Moving it into its own window needs VSCode 1.85+; older versions open it as a tab."
+          "markdownDescription": "%config.physim.monitors.openInNewWindow.markdownDescription%"
         },
         "physim.monitors.useBuiltInOnWindows": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "**Experimental (Windows only).** Render the microcontroller's monitors inside the PhySim panel instead of launching LifeBoatAPI's `STORMWORKS_Simulator.exe`.\n\nPhySim's monitor view is its own implementation, with drawing rules fitted to in-game screenshots. It does not reproduce `screen.drawMap` terrain (filled with sea colour instead), alt touch (primary touch only), or the exe's input/output panels — drive the channels from the PhySim panel instead. Takes effect on the next **F6**.\n\nOn macOS the built-in monitors are always used and this setting is ignored."
+          "markdownDescription": "%config.physim.monitors.useBuiltInOnWindows.markdownDescription%"
         }
       }
     }
@@ -119,7 +120,7 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^18.0.0",
     "@types/three": "^0.160.0",
-    "@types/vscode": "^1.62.0",
+    "@types/vscode": "^1.73.0",
     "eslint": "^10.6.0",
     "fengari": "^0.1.5",
     "globals": "^17.7.0",

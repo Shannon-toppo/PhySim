@@ -329,9 +329,9 @@ Monitors ヘッダーの **+ Monitor** で画面を追加し、各モニター�
   しまい、相対的な大きさが分からなくなるためです。
 
 この機能は PhySim のモニター表示を使っている場合（macOS 常時 / Windows は
-`physim.monitors.useBuiltInOnWindows`）にのみ利用できます。`STORMWORKS_Simulator.exe`
+`physim.monitors.useBuiltInOnWindows`が有効のとき）にのみ利用できます。`STORMWORKS_Simulator.exe`
 を使う通常の Windows 環境では、モニターの構成は従来どおりスクリプト側の
-`simulator:setScreen` で行ってください。
+`simulator:setScreen` か`STORMWORKS_Simulator.exe`のGUI上から操作してください
 
 ### Windowsで自前のモニター表示を使う（実験的機能）
 
@@ -347,7 +347,7 @@ F6ごとにどちらの描画を選んだか、14238番ポートを実際に確�
 デフォルトはOFFです。どちらを使うかは次の違いで選んでください。
 
 - **PhySim の表示が向いている場合** — 図形や文字を、実機のスクリーンショットに合わせた規則で確かめたいとき。
-- **exe が向いている場合** — `screen.drawMap` の地図、alt タッチ、exe の入出力パネルを使いたいとき。
+- **exe が向いている場合** — alt タッチ、exe の入出力パネルを使いたいとき。
 
 ### Tip: モニターシミュレーションだけ使う場合
 

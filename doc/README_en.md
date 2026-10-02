@@ -328,9 +328,9 @@ also sent separately for each monitor, but only screen 1 flows into the composit
 - The zoom is shared by all monitors. Fitting each screen separately would draw a 1x1 larger than a 3x3,
   and you could no longer tell their relative sizes.
 
-This feature is only available when PhySim's monitor view is in use (always on macOS; on Windows with
-`physim.monitors.useBuiltInOnWindows`). In a normal Windows setup using `STORMWORKS_Simulator.exe`,
-configure the monitors from the script with `simulator:setScreen` as before.
+This feature is only available when PhySim's monitor view is in use (always on macOS; on Windows when
+`physim.monitors.useBuiltInOnWindows` is enabled). In a normal Windows setup using `STORMWORKS_Simulator.exe`,
+configure the monitors with `simulator:setScreen` in the script or from the `STORMWORKS_Simulator.exe` GUI.
 
 ### Using PhySim's monitor view on Windows (experimental)
 
@@ -346,7 +346,7 @@ the patch to `_simulator.lua` was applied.
 It is OFF by default. Choose between them based on the following:
 
 - **When PhySim's view suits you** — when you want to check shapes and text with rules fitted to in-game screenshots.
-- **When the exe suits you** — when you want `screen.drawMap` maps, alt touch, or the exe's input/output panels.
+- **When the exe suits you** — when you want alt touch or the exe's input/output panels.
 
 ### Tip: using only the monitor simulation
 

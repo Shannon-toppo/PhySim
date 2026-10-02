@@ -45,7 +45,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         await server.start(port);
       } catch (err) {
         vscode.window.showErrorMessage(
-          `PhySim: failed to bind TCP port ${port}: ${err instanceof Error ? err.message : String(err)}`
+          vscode.l10n.t("PhySim: failed to bind TCP port {0}: {1}", port, err instanceof Error ? err.message : String(err))
         );
         return;
       }

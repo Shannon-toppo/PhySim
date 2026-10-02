@@ -362,7 +362,7 @@ User-facing host text is translated; the webview panel is not.
 
 ## Distribution
 
-The extension is published on the VS Code Marketplace as `shannon-toppo.physim` (first published 2026-09-24, still flagged `"preview": true`). LifeBoatAPI is pulled from the Marketplace too, via `extensionDependencies`.
+The extension is published on the VS Code Marketplace as `shannon-toppo.physim` (first published 2026-09-24; the `"preview"` flag was dropped in 1.2.0). LifeBoatAPI is pulled from the Marketplace too, via `extensionDependencies`.
 
 Releases are uploaded by hand: `npx vsce package`, then upload the `.vsix` at https://marketplace.visualstudio.com/manage (the extension's "…" menu → Update). Marketplace refuses a version it already has, so bump `version` in `package.json` for every release. The same `.vsix` can also be attached to a GitHub Release.
 

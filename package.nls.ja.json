@@ -1,6 +1,7 @@
 {
   "description": "3D ギズモから Stormworks の物理センサーの出力を作り、LifeBoatAPI のマイコンデバッガに渡します。",
   "command.open.title": "PhySim: 物理センサーパネルを開く",
+  "command.openMonitors.title": "PhySim: モニターを別ウィンドウで開く",
   "command.reset.title": "PhySim: ギズモをリセット",
   "command.showLog.title": "PhySim: ログを表示",
   "config.physim.port.description": "PhySim の Lua クライアントからの接続を待ち受ける TCP ポート。",
@@ -9,5 +10,6 @@
   "config.physim.panel.openLocation.enumDescriptions.beside": "今のウィンドウで、アクティブなエディタの横に開く（既定）。",
   "config.physim.panel.openLocation.enumDescriptions.newWindow": "別のフローティングウィンドウで開く（VSCode 1.85 以降）。",
   "config.physim.autoInjectLibraryPath.description": "LifeBoatAPI のワークスペースで、同梱の lua/ フォルダを lifeboatapi.stormworks.libs.libraryPaths に自動で追加する。",
+  "config.physim.monitors.openInNewWindow.markdownDescription": "マイコンのモニターを、3D ビューの下ではなく別のウィンドウに表示します。ウィンドウはシミュレーターのセッションで最初のモニターが出たときに開きます。閉じると、次に **F6** を押すまでモニターはパネルに戻ります。`PhySim: モニターを別ウィンドウで開く` でいつでも開けます。\n\nPhySim がモニターを描画しているときだけ有効です（macOS では常時、Windows では `physim.monitors.useBuiltInOnWindows` が有効のとき）。別ウィンドウへの移動には VSCode 1.85 以降が必要で、それより古い版ではタブとして開きます。",
   "config.physim.monitors.useBuiltInOnWindows.markdownDescription": "**実験的機能（Windows のみ）。** LifeBoatAPI の `STORMWORKS_Simulator.exe` を起動せず、マイコンのモニターを PhySim のパネル内に描画します。次に **F6** を押したときから反映されます。\n\nPhySim のモニター表示は独自実装で、描画ルールはゲーム内のスクリーンショットに合わせてあります。`screen.drawMap` の地形（代わりに海の色で塗ります）、2 本目のタッチ（1 本目のみ対応）、exe の入出力パネルは再現しません。チャンネルは PhySim のパネルから操作してください。\n\nmacOS では常に独自実装のモニター表示を使うため、この設定は無視されます。"
 }

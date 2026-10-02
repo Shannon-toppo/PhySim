@@ -45,8 +45,8 @@
 
 import {
   monitorsSection, monitorsList, monitorZoomEl, monitorTrueColourEl, monitorAddEl
-} from "./dom.js";
-import { sendTouch, sendScreenSet, sendScreenRemove } from "./messaging.js";
+} from "./monitorDom.js";
+import { sendTouch, sendScreenSet, sendScreenRemove } from "./monitorMessaging.js";
 import {
   SCREEN_SIZES, DEFAULT_SIZE, MAX_SCREENS, nextScreenNumber, pixelsToSize, fitScale
 } from "./monitorConfig.js";

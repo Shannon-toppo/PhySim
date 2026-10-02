@@ -83,6 +83,8 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
    - `visuals.js` — the path trail (a `THREE.Line` with an age-faded vertex colour) and the world-frame velocity arrow, plus the sidebar toggles that own them. Samples per **tick** (called from `simulation.js`'s fixed-timestep loop) as well as per rAF, so a throttled panel still records the path at full resolution.
    - `trail.js` — **trail ring buffer + arrow scaling, pure module** (no DOM/three) so `test/trail.test.mjs` runs it in Node. The buffer shifts rather than wraps: the vertex order must equal the draw order or the line draws a stray segment across the seam.
    - `mcScreen.js` — microcontroller monitor rendering (always on macOS, opt-in on Windows); draws `SimStubServer`'s forwarded screen config/draw commands and relays touch input back. Handles **any number of screens** — one `<canvas>` each, all at one shared zoom factor. See "Monitor colours" below before touching `makeColour()`, "Monitor rendering cost" before making it draw through the canvas 2D API again, and "Multiple monitors" before touching the screen controls.
+   - `monitorDom.js` / `monitorMessaging.js` — the monitor section's elements and its webview→host messages, split out of `dom.js` / `messaging.js` so `mcScreen.js` imports nothing from the 3D panel. Keep it that way: the stand-alone monitor window loads `mcScreen.js` without `dom.js`, which throws on the first panel element it can't find.
+   - `monitors.html` / `monitors.js` — the **stand-alone monitor window** (`physim.monitors.openInNewWindow`, default off, or the `physim.openMonitors` command). Its `#monitors` block mirrors `panel.html`'s; the ids are the contract with `monitorDom.js`. See "Monitor window" below.
    - `monitorConfig.js` — **monitor sizes, screen-number allocation and the shared fit scale, pure module** (no DOM/canvas) so `test/monitorConfig.test.mjs` runs it in Node. `SimStubServer` validates independently — a webview message is untrusted — and `test/simstub.test.mjs` checks the host accepts everything the dropdown offers.
    - `blend.js` — **colour packing + the game's 4-channel blending, pure module** (no DOM/canvas) so `test/blend.test.mjs` runs it in Node. Owns the endianness probe that decides how RGBA bytes pack into an ImageData word.
    - `pixelFont.js` — the 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush), glyphs read off in-game screenshots where available, plus TEXTBOX wrapping/placement (`wrapTextBox` / `layoutTextBox`).
@@ -192,6 +194,24 @@ In the panel every monitor is drawn at **one shared zoom factor**, fit
 included. Fitting each one to the column separately would scale a 1x1 by 8 and
 a 3x3 by 2, so the small monitor would draw larger than the big one. Fit is
 bounded by width only, as it has always been; tall layouts scroll.
+
+## Monitor window
+
+`PhysSimPanelManager` can show the monitors in a second webview panel
+(`physim.monitors`) moved into its own window with
+`workbench.action.moveEditorToNewWindow` (VSCode 1.85+; older versions keep it
+as a tab). While it exists it **owns the monitors**: `screenTarget()` sends
+every `screenConfig`/`screenFrame` there, and the panel is sent an empty
+`screenConfig`, which hides its section. A `screenRequest` is only answered for
+the current target, so the panel loading later doesn't grab them back.
+
+- With the setting on, the window opens on the first powered-on
+  `screenConfig`, not with the panel — on Windows with the real exe there are
+  never any monitors to show.
+- Closing it by hand replays the screens into the panel and sets
+  `monitorWindowDismissed`, so the next `screenConfig` doesn't reopen it;
+  `simulatorStarted()` (each F6) clears that. Turning the setting off closes it
+  without counting as a dismissal.
 
 ## Monitor rasterising (read before changing a shape)
 

@@ -49,6 +49,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         );
         return;
       }
+      panel.simulatorStarted();
       const auto = vscode.workspace.getConfiguration().get<boolean>("physim.autoOpenOnSimulate", true);
       if (auto) panel.openOrReveal();
     }),
@@ -59,6 +60,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
     vscode.commands.registerCommand("physim.showLog", () => showLog()),
     vscode.commands.registerCommand("physim.open",  () => panel.openOrReveal()),
+    vscode.commands.registerCommand("physim.openMonitors", () => panel.openMonitorWindow()),
     vscode.commands.registerCommand("physim.reset", () => panel.reset()),
     { dispose: () => { server.stop(); if (stub) stub.stop(); panel.close(); disposeLog(); } }
   );

@@ -10,5 +10,7 @@
   "PhySim: log channel values to": "PhySim: チャンネル値のログの保存先",
   "PhySim: could not open CSV log: {0}": "PhySim: CSV ログを開けませんでした: {0}",
   "PhySim: could not open the save dialog: {0}": "PhySim: 保存ダイアログを開けませんでした: {0}",
-  "PhySim: logged {0} rows to {1}": "PhySim: {0} 行を {1} に記録しました"
+  "PhySim: logged {0} rows to {1}": "PhySim: {0} 行を {1} に記録しました",
+  "PhySim: failed to move the monitors to a new window ({0}). Requires VSCode 1.85+.": "PhySim: モニターを新しいウィンドウに移せませんでした（{0}）。VSCode 1.85 以降が必要です。",
+  "PhySim: the monitor view is not available on this platform.": "PhySim: この環境ではモニター表示を使えません。"
 }

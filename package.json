@@ -50,6 +50,10 @@
         "title": "%command.open.title%"
       },
       {
+        "command": "physim.openMonitors",
+        "title": "%command.openMonitors.title%"
+      },
+      {
         "command": "physim.reset",
         "title": "%command.reset.title%"
       },
@@ -88,6 +92,11 @@
           "type": "boolean",
           "default": true,
           "description": "%config.physim.autoInjectLibraryPath.description%"
+        },
+        "physim.monitors.openInNewWindow": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.physim.monitors.openInNewWindow.markdownDescription%"
         },
         "physim.monitors.useBuiltInOnWindows": {
           "type": "boolean",

@@ -41,16 +41,13 @@ export const csvCountEl = mustGet("csv-count");
 // and the monitor section get the full panel width (panel.js owns the state).
 export const sidebarToggleBtn = /** @type {HTMLButtonElement} */ (mustGet("sidebar-toggle"));
 
-// Monitor stand-in for LifeBoatAPI's Windows-only simulator exe (macOS).
-// Starts hidden; mcScreen.js unhides it once a screenConfig arrives.
-export const monitorsSection = mustGet("monitors");
-export const monitorsList = mustGet("monitors-list");
+// Monitor stand-in for LifeBoatAPI's Windows-only simulator exe. The section's
+// own elements live in monitorDom.js, which the stand-alone monitor window
+// loads without this file.
+export { monitorsSection } from "./monitorDom.js";
 // Drag handle between the viewport and the monitor section (panel.js owns the
 // drag; mcScreen.js hides it via body.no-monitors when there is nothing to show).
 export const monitorsResizer = mustGet("monitors-resizer");
-export const monitorZoomEl = /** @type {HTMLSelectElement} */ (mustGet("monitor-zoom"));
-export const monitorAddEl = /** @type {HTMLButtonElement} */ (mustGet("monitor-add"));
-export const monitorTrueColourEl = /** @type {HTMLInputElement} */ (mustGet("monitor-truecolour"));
 
 // vx-vz: linear velocity, ax-az: angular velocity (CH7-12, sent on the wire).
 // lax-laz / aax-aaz: linear / angular acceleration — webview-only, they drive

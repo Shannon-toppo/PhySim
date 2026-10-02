@@ -103,6 +103,7 @@ Run these from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P).
 | Command | Description |
 |---------|-------------|
 | `PhySim: Open Physics Sensor Panel` | Opens the panel (for when it did not open automatically) |
+| `PhySim: Open Monitors in New Window` | Opens the monitor view on its own in a separate window (only while PhySim draws the monitors) |
 | `PhySim: Reset Gizmo` | Stops Simulate and resets position, rotation, velocity and acceleration to 0 |
 | `PhySim: Show Log` | Shows PhySim's log (for investigating problems) |
 
@@ -259,6 +260,7 @@ After `require("PhySim")`, the global `PhySim` is the class table.
 | `physim.autoOpenOnSimulate`          | true       | Automatically open the panel when LifeBoatAPI's "Run Simulator" starts |
 | `physim.panel.openLocation`          | beside     | Where to open the panel. `beside` = split beside the active editor, `newWindow` = open in a separate window (requires VSCode 1.85 or later) |
 | `physim.autoInjectLibraryPath`       | true       | Add `<extension>/lua/` to `lifeboatapi.stormworks.libs.libraryPaths`   |
+| `physim.monitors.openInNewWindow`    | false      | Show the monitors in a separate window instead of below the 3D view. It opens when the first monitor of a simulator session arrives; closing it moves the monitors back into the panel for the rest of that session. Moving it into its own window needs VSCode 1.85 or later; older versions open it as a tab |
 | `physim.monitors.useBuiltInOnWindows` | false     | **Experimental, Windows only.** Draw the monitors in the PhySim panel instead of launching `STORMWORKS_Simulator.exe`. Ignored on macOS, where the built-in implementation is the only option |
 
 ## Supported platforms

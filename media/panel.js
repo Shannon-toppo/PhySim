@@ -24,7 +24,8 @@ import {
 } from "./dom.js";
 import { scene, renderer, camera, orbit, transform, targetGroup, updateLabels, flushResize } from "./scene.js";
 import { syncPoseFromInputs, syncInputsFromPose } from "./pose.js";
-import { scheduleSend, sendState, requestScreens } from "./messaging.js";
+import { scheduleSend, sendState } from "./messaging.js";
+import { requestScreens } from "./monitorMessaging.js";
 import { applyScreenConfig, applyScreenFrame } from "./mcScreen.js";
 import { setSimulating, toggleSimulating, step } from "./simulation.js";
 import { renderPresetList, applyPresetState } from "./presets.js";

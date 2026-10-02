@@ -103,6 +103,7 @@ ext install shannon-toppo.physim
 | コマンド | 内容 |
 |----------|------|
 | `PhySim: Open Physics Sensor Panel` | パネルを開く（自動で開かなかったとき用） |
+| `PhySim: Open Monitors in New Window` | モニター表示だけを別ウィンドウで開く（PhySim がモニターを描いているときのみ） |
 | `PhySim: Reset Gizmo` | Simulate を止め、位置・回転・速度・加速度をすべて 0 に戻す |
 | `PhySim: Show Log` | PhySim の動作ログを表示する（不具合の調査用） |
 
@@ -259,6 +260,7 @@ gnuplot などにそのまま読み込めます。
 | `physim.autoOpenOnSimulate`          | true       | LifeBoatAPIの「Run Simulator」起動時にパネルを自動で開く               |
 | `physim.panel.openLocation`          | beside     | パネルを開く位置。`beside` = アクティブエディタの隣に分離、`newWindow` = 別ウィンドウで開く（VSCode 1.85以降が必要） |
 | `physim.autoInjectLibraryPath`       | true       | `<extension>/lua/` を `lifeboatapi.stormworks.libs.libraryPaths` に追加 |
+| `physim.monitors.openInNewWindow`    | false      | モニター表示を 3D ビューの下ではなく別ウィンドウに出す。シミュレーター起動後、最初のモニターが来たときに開きます。閉じるとそのセッションの間はパネルに戻ります。別ウィンドウへの移動は VSCode 1.85 以降が必要で、それより古い版ではタブとして開きます |
 | `physim.monitors.useBuiltInOnWindows` | false     | **実験的機能・Windows専用。** `STORMWORKS_Simulator.exe` を起動せず、モニターを PhySim パネルに描画する。macOSでは自前実装しか選択肢が無いため無視されます |
 
 ## 対応プラットフォーム

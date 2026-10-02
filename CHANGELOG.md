@@ -4,6 +4,8 @@ PhySim の主な変更点です。各バージョンの詳細は [GitHub Release
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-03
+
 ### 追加
 - モニター表示だけを別ウィンドウに出す設定 `physim.monitors.openInNewWindow`（既定は off）と、コマンド `PhySim: Open Monitors in New Window`。別ウィンドウを開いている間、パネル側のモニター欄は消えて 3D ビューが広がります。ウィンドウを閉じると、モニターはパネルに戻ります。
 - VS Code の表示言語が日本語のとき、設定画面の説明文・コマンド名・通知メッセージを日本語で表示するようにしました。パネル内のボタンは英語のままです。
@@ -129,7 +131,8 @@ VS Code Marketplace で公開した最初のバージョンです（プレビュ
 
 - 最初の公開版。
 
-[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/1.1.2...HEAD
+[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.2.0
 [1.1.2]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.2
 [1.1.1]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.1
 [1.1.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.0

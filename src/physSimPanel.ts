@@ -120,7 +120,7 @@ export class PhysSimPanelManager {
     // A log file that dies mid-session can't be recovered; tell the user and
     // put the webview's button back where it belongs.
     this.csv.onError = err => {
-      vscode.window.showErrorMessage(`PhySim: CSV log write failed: ${err.message}`);
+      vscode.window.showErrorMessage(vscode.l10n.t("PhySim: CSV log write failed: {0}", err.message));
       log(`CSV log write failed: ${err.message}`);
       this.postCsvState(false);
     };
@@ -187,7 +187,7 @@ export class PhysSimPanelManager {
         await vscode.commands.executeCommand("workbench.action.moveEditorToNewWindow");
       } catch (err) {
         vscode.window.showWarningMessage(
-          `PhySim: failed to move panel to a new window (${err instanceof Error ? err.message : String(err)}). Requires VSCode 1.85+.`
+          vscode.l10n.t("PhySim: failed to move panel to a new window ({0}). Requires VSCode 1.85+.", err instanceof Error ? err.message : String(err))
         );
       }
     }
@@ -349,7 +349,7 @@ export class PhysSimPanelManager {
         defaultUri,
         filters: { "CSV": ["csv"] },
         saveLabel: "Start logging",
-        title: "PhySim: log channel values to"
+        title: vscode.l10n.t("PhySim: log channel values to")
       });
       if (!target) {
         log("CSV log: the save dialog was dismissed.");
@@ -360,7 +360,7 @@ export class PhysSimPanelManager {
         this.csv.start(target.fsPath);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`PhySim: could not open CSV log: ${message}`);
+        vscode.window.showErrorMessage(vscode.l10n.t("PhySim: could not open CSV log: {0}", message));
         log(`CSV log open failed for ${target.fsPath}: ${message}`);
         this.postCsvState(false);
         return;
@@ -371,7 +371,7 @@ export class PhysSimPanelManager {
       // showSaveDialog itself failed. Without this the rejection is swallowed
       // by the webview message handler and the panel never hears back.
       const message = err instanceof Error ? err.message : String(err);
-      vscode.window.showErrorMessage(`PhySim: could not open the save dialog: ${message}`);
+      vscode.window.showErrorMessage(vscode.l10n.t("PhySim: could not open the save dialog: {0}", message));
       log(`CSV log: showSaveDialog failed: ${message}`);
       this.postCsvState(false);
     } finally {
@@ -394,7 +394,7 @@ export class PhysSimPanelManager {
     const rows = Math.max(0, result.lines - 1);
     const open = "Open";
     const choice = await vscode.window.showInformationMessage(
-      `PhySim: logged ${rows} rows to ${result.path}`, open
+      vscode.l10n.t("PhySim: logged {0} rows to {1}", rows, result.path), open
     );
     if (choice === open) {
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(result.path));

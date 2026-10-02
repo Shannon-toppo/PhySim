@@ -1,0 +1,13 @@
+{
+  "description": "Simulate Stormworks physics sensor outputs from a 3D gizmo, alongside LifeBoatAPI's microcontroller debugger.",
+  "command.open.title": "PhySim: Open Physics Sensor Panel",
+  "command.reset.title": "PhySim: Reset Gizmo",
+  "command.showLog.title": "PhySim: Show Log",
+  "config.physim.port.description": "TCP port the extension listens on for the PhySim Lua client.",
+  "config.physim.autoOpenOnSimulate.description": "Auto-open the panel when LifeBoatAPI Simulate (F6) starts.",
+  "config.physim.panel.openLocation.description": "Where to place the Physics Sensor panel when it opens.",
+  "config.physim.panel.openLocation.enumDescriptions.beside": "Open the panel beside the active editor in the current window (default).",
+  "config.physim.panel.openLocation.enumDescriptions.newWindow": "Open the panel in a new floating window (requires VSCode 1.85+).",
+  "config.physim.autoInjectLibraryPath.description": "Automatically add the bundled lua/ folder to lifeboatapi.stormworks.libs.libraryPaths for LifeBoatAPI workspaces.",
+  "config.physim.monitors.useBuiltInOnWindows.markdownDescription": "**Experimental (Windows only).** Render the microcontroller's monitors inside the PhySim panel instead of launching LifeBoatAPI's `STORMWORKS_Simulator.exe`.\n\nPhySim's monitor view is its own implementation, with drawing rules fitted to in-game screenshots. It does not reproduce `screen.drawMap` terrain (filled with sea colour instead), alt touch (primary touch only), or the exe's input/output panels — drive the channels from the PhySim panel instead. Takes effect on the next **F6**.\n\nOn macOS the built-in monitors are always used and this setting is ignored."
+}

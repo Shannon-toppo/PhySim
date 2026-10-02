@@ -332,6 +332,14 @@ Touch all of these in lockstep, or things will silently desync:
 
 `README.md` (Japanese, the one GitHub shows) / `doc/README_en.md` also need updating for any new CH.
 
+## Localisation (English / Japanese)
+
+User-facing host text is translated; the webview panel is not.
+
+- `package.json` settings descriptions and command titles are `%key%` placeholders. English lives in `package.nls.json`, Japanese in `package.nls.ja.json`. A new setting or command needs a key in **both**. `displayName` and the settings section title stay literal (product name).
+- Notifications and dialog titles in `src/` go through `vscode.l10n.t("English text {0}", arg)` — the English string *is* the key, so editing it orphans the entry in `l10n/bundle.l10n.ja.json`; update both together. Button labels (e.g. "Open", "Start logging") are deliberately left in English. Output-channel `log()` lines stay English.
+- `vscode.l10n` is why `engines.vscode` is `^1.73.0`.
+
 ## Distribution
 
 The extension is published on the VS Code Marketplace as `shannon-toppo.physim` (first published 2026-09-24, still flagged `"preview": true`). LifeBoatAPI is pulled from the Marketplace too, via `extensionDependencies`.

@@ -1,0 +1,14 @@
+{
+  "PhySim: could not listen on port {0} ({1}). Another process — possibly a previous simulator run — is using it, so the monitor view will stay blank.": "PhySim: ポート {0} で待ち受けできませんでした（{1}）。前回のシミュレーターなど、別のプロセスがこのポートを使っています。モニター表示は空のままになります。",
+  "PhySim: could not patch _simulator.lua (LifeBoatAPI sandbox line not found). PhySim.lua will not be able to open a socket; falling back to raw require.": "PhySim: _simulator.lua を書き換えられませんでした（LifeBoatAPI のサンドボックス生成行が見つかりません）。PhySim.lua はソケットを開けないため、通常の require で続行します。",
+  "PhySim: could not stop LifeBoatAPI from launching STORMWORKS_Simulator.exe (_beginSimulation call not found). It will compete with PhySim for port {0}, so the monitors may stay blank.": "PhySim: LifeBoatAPI による STORMWORKS_Simulator.exe の起動を止められませんでした（_beginSimulation の呼び出しが見つかりません）。exe が PhySim とポート {0} を取り合うため、モニターが空のままになることがあります。",
+  "PhySim: failed to patch _simulator.lua: {0}": "PhySim: _simulator.lua の書き換えに失敗しました: {0}",
+  "PhySim: failed to bind TCP port {0}: {1}": "PhySim: TCP ポート {0} を確保できませんでした: {1}",
+  "PhySim: could not add lua/ to lifeboatapi libraryPaths. Add it manually: {0}": "PhySim: lifeboatapi の libraryPaths に lua/ を追加できませんでした。次のパスを手動で追加してください: {0}",
+  "PhySim: CSV log write failed: {0}": "PhySim: CSV ログの書き込みに失敗しました: {0}",
+  "PhySim: failed to move panel to a new window ({0}). Requires VSCode 1.85+.": "PhySim: パネルを新しいウィンドウに移せませんでした（{0}）。VSCode 1.85 以降が必要です。",
+  "PhySim: log channel values to": "PhySim: チャンネル値のログの保存先",
+  "PhySim: could not open CSV log: {0}": "PhySim: CSV ログを開けませんでした: {0}",
+  "PhySim: could not open the save dialog: {0}": "PhySim: 保存ダイアログを開けませんでした: {0}",
+  "PhySim: logged {0} rows to {1}": "PhySim: {0} 行を {1} に記録しました"
+}

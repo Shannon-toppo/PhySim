@@ -36,7 +36,7 @@ export async function ensureInjected(ctx: vscode.ExtensionContext): Promise<void
         await libCfg.update(LIB_KEY, next, vscode.ConfigurationTarget.Workspace);
       } catch {
         vscode.window.showWarningMessage(
-          "PhySim: could not add lua/ to lifeboatapi libraryPaths. Add it manually: " + luaDir
+          vscode.l10n.t("PhySim: could not add lua/ to lifeboatapi libraryPaths. Add it manually: {0}", luaDir)
         );
       }
     }

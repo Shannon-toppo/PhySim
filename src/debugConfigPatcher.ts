@@ -74,8 +74,10 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
       } catch (err) {
         log(`FAILED to listen on ${SIM_STUB_PORT}: ${err instanceof Error ? err.message : String(err)}`);
         vscode.window.showErrorMessage(
-          `PhySim: could not listen on port ${SIM_STUB_PORT} (${err instanceof Error ? err.message : String(err)}). ` +
-          "Another process — possibly a previous simulator run — is using it, so the monitor view will stay blank."
+          vscode.l10n.t(
+            "PhySim: could not listen on port {0} ({1}). Another process — possibly a previous simulator run — is using it, so the monitor view will stay blank.",
+            SIM_STUB_PORT, err instanceof Error ? err.message : String(err)
+          )
         );
       }
     } else if (this.stub?.isListening()) {
@@ -131,22 +133,22 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
       );
       if (!result.sandboxLineFound) {
         vscode.window.showWarningMessage(
-          "PhySim: could not patch _simulator.lua (LifeBoatAPI sandbox line not found). " +
-          "PhySim.lua will not be able to open a socket; falling back to raw require."
+          vscode.l10n.t("PhySim: could not patch _simulator.lua (LifeBoatAPI sandbox line not found). PhySim.lua will not be able to open a socket; falling back to raw require.")
         );
       }
       if (builtInMonitors && !result.beginSimulationFound) {
         vscode.window.showWarningMessage(
-          "PhySim: could not stop LifeBoatAPI from launching STORMWORKS_Simulator.exe " +
-          "(_beginSimulation call not found). It will compete with PhySim for port " +
-          `${SIM_STUB_PORT}, so the monitors may stay blank.`
+          vscode.l10n.t(
+            "PhySim: could not stop LifeBoatAPI from launching STORMWORKS_Simulator.exe (_beginSimulation call not found). It will compete with PhySim for port {0}, so the monitors may stay blank.",
+            SIM_STUB_PORT
+          )
         );
       }
       if (!result.patched) return config;
       await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(result.text));
     } catch (err) {
       vscode.window.showWarningMessage(
-        "PhySim: failed to patch _simulator.lua: " + (err instanceof Error ? err.message : String(err))
+        vscode.l10n.t("PhySim: failed to patch _simulator.lua: {0}", err instanceof Error ? err.message : String(err))
       );
     }
     return config;

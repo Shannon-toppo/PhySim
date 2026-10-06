@@ -8,7 +8,15 @@ import { readFileSync } from "node:fs";
 import { COMMON_PLACEHOLDERS, PAGE_PLACEHOLDERS, substituteTemplate } from "../out/template.js";
 
 const html = page => readFileSync(new URL(`../media/${page}`, import.meta.url), "utf8");
-const idsOf = source => [...source.replace(/<!--[\s\S]*?-->/g, "").matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
+// An element inside an HTML comment isn't in the document. Cut at the
+// delimiters rather than with a regex replace: text left of each "<!--" is
+// kept, and what follows is dropped up to its "-->" (or to the end).
+const withoutComments = source => source.split("<!--").map((part, i) => {
+  if (i === 0) return part;
+  const end = part.indexOf("-->");
+  return end < 0 ? "" : part.slice(end + 3);
+}).join("");
+const idsOf = source => [...withoutComments(source).matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
 const placeholdersOf = source => new Set([...source.matchAll(/\{\{(\w+)\}\}/g)].map(m => m[1]));
 
 // The registries look their elements up while the module loads, so loading

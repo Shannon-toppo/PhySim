@@ -15,7 +15,13 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Most users are on Windows and the monitors are mandatory on macOS; the
+    # tests that swap process.platform still run on the runner's own `path`.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     # The whole job takes about a minute; anything past this is a hang.
     timeout-minutes: 10
     steps:
@@ -30,4 +36,8 @@ jobs:
       - run: npm run lint
       - run: npm run check:media
       - run: npm test
+        timeout-minutes: 3
+      # The file list is the same on every OS; once is enough.
+      - run: npm run check:package
+        if: matrix.os == 'ubuntu-latest'
         timeout-minutes: 3

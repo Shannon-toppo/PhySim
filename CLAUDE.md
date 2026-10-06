@@ -17,6 +17,7 @@ npm run watch              # tsc --watch
 npm run lint               # eslint . (flat config, correctness rules only — no formatter)
 npm run check:media        # tsc -p tsconfig.media.json — strict checkJs over media/*.js (JSDoc types)
 npm test                   # compile + node --test test/**/*.test.mjs
+npm run check:package      # vsce ls piped into scripts/check-package.mjs — the .vsix has every runtime file and no dev-only directory
 npx vsce package           # build physim-x.y.z.vsix for distribution
 scripts/build-luasocket-macos.sh  # rebuilds the committed universal (arm64+x86_64) luasocket/darwin/*.so — only needed when changing luasocket/Lua versions
 ```
@@ -43,6 +44,8 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, the tick/send de-duplication, and `game_time_s` counting ticks rather than wall clock.
 - `timeScale.test.mjs` — `media/timeScale.js` and the host's copy of the speed list agree, and anything else sanitises to ×1.
 - `csvLogger.test.mjs` — `src/csvLogger.ts`: CRLF records, rows arriving with no log open, a row smuggling its own newline, truncate-on-start, and an end-to-end pass where webview-shaped batches parse back as one table.
+- `l10n.test.mjs` — every `%key%` in `package.json` exists in both `package.nls*.json`, every `vscode.l10n.t()` string has an entry in `l10n/bundle.l10n.ja.json` (and no entry is orphaned), and a translation keeps its `{n}` arguments.
+- `webviewHtml.test.mjs` — loads `dom.js` / `monitorDom.js` against a recording `document` and checks `panel.html` / `monitors.html` have every id they look up, plus the `{{placeholder}}` set of each page against `src/template.ts`.
 - `simstub.test.mjs` — the shared `frame.ts` framing (prefix encode/decode, split/concat/corrupt-prefix resync) plus `simStubServer.ts`'s protocol handling: `SCREENCONFIG` → `SCREENSIZE`, portrait swap, `TICKEND` buffering/flush, draw-command parsing, and `sendTouch()`'s wire shape.
 
 ## Architecture — three boundaries, three runtimes
@@ -95,13 +98,14 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
 2. **`src/`** — the extension host.
    - `extension.ts` activates on `onStartupFinished`, listens for `vscode.debug.onDidStartDebugSession` filtered by `session.type === "lua" && session.name === "Run Simulator"` (the exact config LifeBoatAPI produces in its `runSimulator.js`). On match it starts `PhysServer` and opens the panel.
    - `physServer.ts` is a single-client `net.createServer` on `127.0.0.1:<port>` using the **same length-prefix protocol as LifeBoatAPI's `SimulatorConnection.lua`**: `sprintf("%04d", body.length) + body`. Don't reorder the 12 fields — `PhySim.lua` parses positionally. It also sends `RATE|<ticks/s>` (see "Simulation speed").
-   - `physSimPanel.ts` serves `media/panel.html` (the **authoritative** markup template) after substituting the `{{…}}` placeholders — CSP, nonce, webview-resource URIs, slider bounds. `substituteTemplate` throws if a placeholder is left unresolved. Note: an HTML comment in the template must never contain a literal double-brace token, or the leftover check trips.
+   - `physSimPanel.ts` serves `media/panel.html` (the **authoritative** markup template) after substituting the `{{…}}` placeholders — CSP, nonce, webview-resource URIs, slider bounds. `substituteTemplate` (in `template.ts`) throws if a placeholder is left unresolved. Note: an HTML comment in the template must never contain a literal double-brace token, or the leftover check trips.
    - `debugConfigPatcher.ts` is the **critical glue**: see "LifeBoatAPI integration" below.
    - `libraryPathInjector.ts` writes the bundled `lua/` path into `lifeboatapi.stormworks.libs.libraryPaths` for editor autocompletion. Re-run on `onDidChangeWorkspaceFolders`. The **runtime** does not depend on this setting — only autocomplete does.
    - `pathUtils.ts` — shared `normalize()` for Windows-safe path comparison (used by both files above).
    - `simStubServer.ts` — the port-14238 stand-in for `STORMWORKS_Simulator.exe`; started from `debugConfigPatcher.ts` before `lua-debug` spawns Lua, whenever `useBuiltInMonitors()` says PhySim is drawing the monitors. Also owns the panel's declared monitors (`configureScreen` / `removeScreen` / `getWantedScreens`) — see "Multiple monitors".
    - `simulatorLuaPatch.ts` — the `_simulator.lua` text surgery (socket injection, POSIX file-scan shim, exe-launch suppression) as a **pure, `vscode`-free module** so `test/simulatorLuaPatch.test.mjs` can run it in Node.
    - `frame.ts` — the `%04d`-length-prefixed framing shared by `physServer.ts` and `simStubServer.ts`.
+   - `template.ts` — `substituteTemplate` and the per-page `{{placeholder}}` lists, as a **pure, `vscode`-free module**. `buildHtml`'s values are typed from the lists, so a new placeholder goes there first; `test/webviewHtml.test.mjs` checks the HTML uses exactly those.
    - `csvLogger.ts` — the CSV log file: open/append/close plus row sanitising, as a **pure, `vscode`-free module** so `test/csvLogger.test.mjs` can run it in Node. It appends whatever lines it is handed and counts them; the column set lives in `media/csv.js`.
 
 3. **`lua/PhySim.lua`** — runs inside LifeBoatAPI's sandbox.
@@ -360,11 +364,12 @@ User-facing host text is translated; the webview panel is not.
 - `package.json` settings descriptions and command titles are `%key%` placeholders. English lives in `package.nls.json`, Japanese in `package.nls.ja.json`. A new setting or command needs a key in **both**. `displayName` and the settings section title stay literal (product name).
 - Notifications and dialog titles in `src/` go through `vscode.l10n.t("English text {0}", arg)` — the English string *is* the key, so editing it orphans the entry in `l10n/bundle.l10n.ja.json`; update both together. Button labels (e.g. "Open", "Start logging") are deliberately left in English. Output-channel `log()` lines stay English.
 - `vscode.l10n` is why `engines.vscode` is `^1.73.0`.
+- `test/l10n.test.mjs` fails on a missing or orphaned key in either mechanism. It finds `l10n.t()` strings by regex, so the first argument must be a plain double-quoted literal.
 
 ## Distribution
 
 The extension is published on the VS Code Marketplace as `shannon-toppo.physim` (first published 2026-09-24; the `"preview"` flag was dropped in 1.2.0). LifeBoatAPI is pulled from the Marketplace too, via `extensionDependencies`.
 
-Releases are uploaded by hand: `npx vsce package`, then upload the `.vsix` at https://marketplace.visualstudio.com/manage (the extension's "…" menu → Update). Marketplace refuses a version it already has, so bump `version` in `package.json` for every release. The same `.vsix` can also be attached to a GitHub Release.
+Releases are uploaded by hand: `npx vsce package`, then upload the `.vsix` at https://marketplace.visualstudio.com/manage (the extension's "…" menu → Update). Marketplace refuses a version it already has, so bump `version` in `package.json` for every release. CI runs `npm run check:package` on the file list; it only sees tracked files, so check `npx vsce ls` for stray untracked ones before packaging locally. The same `.vsix` can also be attached to a GitHub Release.
 
 There is no `vsce publish` from the CLI or CI yet. Azure DevOps retires global PATs on 2026-12-01, so don't set one up; automating this means `vsce publish --azure-credential` (vsce >= 2.26.1) with a user-assigned managed identity federated to GitHub Actions. The locally resolved vsce is 2.15.0, which is too old for that flag.

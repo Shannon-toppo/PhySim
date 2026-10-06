@@ -111,6 +111,7 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint .",
     "check:media": "tsc -p tsconfig.media.json",
+    "check:package": "npx --yes @vscode/vsce ls | node ./scripts/check-package.mjs",
     "test": "npm run compile && node --test \"test/**/*.test.mjs\"",
     "copy-three": "node ./scripts/copy-three.js",
     "postinstall": "npm run copy-three"

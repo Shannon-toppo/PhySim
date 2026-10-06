@@ -5,6 +5,7 @@ import { PhysServer, PhysState, ZERO_STATE, sanitizeTimeScale } from "./physServ
 import { SimStubServer, ScreenRequest, sanitizeScreenRequest } from "./simStubServer";
 import { CsvLogger, defaultLogPath } from "./csvLogger";
 import { log } from "./log";
+import { Page, PageValues, substituteTemplate } from "./template";
 
 type Triple = [number, number, number];
 
@@ -626,7 +627,7 @@ export class PhysSimPanelManager {
    * Fill one of the media/*.html templates. Every page gets the CSP, the
    * nonce and the stylesheet; `values` carries the page's own placeholders.
    */
-  private buildHtml(webview: vscode.Webview, page: string, values: Record<string, string>): string {
+  private buildHtml<P extends Page>(webview: vscode.Webview, page: P, values: PageValues<P>): string {
     const nonce = makeNonce();
     const csp = [
       `default-src 'none'`,
@@ -655,21 +656,4 @@ function makeNonce(): string {
   let s = "";
   for (let i = 0; i < 32; i++) s += chars[Math.floor(Math.random() * chars.length)];
   return s;
-}
-
-/**
- * Replace every {{key}} token in the template. Throws if any token remains
- * unresolved — catches placeholder typos at panel-open time instead of
- * silently shipping broken markup.
- */
-function substituteTemplate(template: string, values: Record<string, string>, page: string): string {
-  let out = template;
-  for (const [key, value] of Object.entries(values)) {
-    out = out.split(`{{${key}}}`).join(value);
-  }
-  const leftover = /\{\{\w+\}\}/.exec(out);
-  if (leftover) {
-    throw new Error(`PhySim: unresolved placeholder ${leftover[0]} in media/${page}`);
-  }
-  return out;
 }

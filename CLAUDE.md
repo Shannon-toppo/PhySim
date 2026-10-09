@@ -22,7 +22,7 @@ npx vsce package           # build physim-x.y.z.vsix for distribution
 scripts/build-luasocket-macos.sh  # rebuilds the committed universal (arm64+x86_64) luasocket/darwin/*.so — only needed when changing luasocket/Lua versions
 ```
 
-Debugging the extension itself: open the folder in VSCode and press **F5**. `.vscode/launch.json` is already wired (Extension Development Host, preLaunchTask = `npm: compile`).
+Debugging the extension itself: open the folder in VSCode and press **F5**. `.vscode/launch.json` is already wired (Extension Development Host, preLaunchTask = `npm: watch`). It is `watch` rather than `compile` on purpose: a one-shot build only runs on F5, so a Reload Window in the dev host would leave the host on a stale `out/` while `media/` — read from disk on every load — moves on.
 
 ### Tests
 
@@ -34,12 +34,14 @@ Debugging the extension itself: open the folder in VSCode and press **F5**. `.vs
 - `parity.test.mjs` — **the CH13–17 desync guard**: runs `media/channels.js` and `PhySim.lua:injectAsInputs` over the same vectors and asserts agreement to 1e-9. Extend its vector table whenever the derived-channel math changes.
 - Lua runs inside **fengari** (Lua 5.3 semantics in pure JS — same major version as lua-debug) via `test/helpers/luaRunner.mjs`, which stubs `_physim_socket` and drives `PhySim._buf` directly. No system Lua install needed.
 - `debugConfigPatcher.test.mjs` — `src/debugConfigPatcher.ts` with a stub served for `"vscode"` (hooked in via `Module._load` before the compiled file loads) and `process.platform`/`arch` swapped per call: cpath prepended and not duplicated, native `luaArch`, `config.arg` dedup, stub start/stop per `useBuiltInMonitors()`, and the warn-don't-throw paths.
+- `pathUtils.test.mjs` — `src/pathUtils.ts`'s `normalize()`: forward-slashed, case-folded, trailing separators and dot segments resolved. `path.resolve` is platform-specific, so inputs are built from the host platform and the drive-letter/backslash cases only run on win32.
 - `simulatorLuaPatch.test.mjs` — the `_simulator.lua` surgery: injection order (FS shim before `createSandbox`, socket after), the exe-launch suppression, idempotence, and the "upstream changed the template" cases that must warn instead of guessing.
 - `trail.test.mjs` — `media/trail.js`: the trail buffer keeps the newest points in draw order, drops sub-millimetre samples, survives a capacity change, and the velocity-arrow length stays inside the scene for any speed.
 - `blend.test.mjs` — `media/blend.js`: packed words really are R,G,B,A in memory order (get this backwards and every monitor colour comes out with red and blue swapped), and blending reproduces the game's measured values (alpha blended too, shown as rgb × alpha).
 - `ingame.test.mjs` — **the monitor against the real game**: runs each page of `tools/ingame/verify*.lua` (fengari, `test/helpers/cardRunner.mjs`) through `raster.js` + `pixelFont.js` and compares with `test/fixtures/ingame-raster.json`, lit pixels from Stormworks screenshots. See "Monitor rasterising" below.
 - `ties.test.mjs` — card G (`tools/ingame/verifyG_ties.lua`, the 1/512px tie probes) against its reader `tools/ingame/analysis/ties.mjs`: the card rendered with its tie nudged up and then down must decode to all-up and all-down, and exactly on the tie to what `snapUnits()` predicts, on six monitor sizes, so the probe layout in the Lua and in the reader can't drift apart.
 - `raster.test.mjs` — `media/raster.js`: one test per rasterising rule (each tagged with the page that shows it), plus the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
+- `pixelFont.test.mjs` — `media/pixelFont.js`: glyph table shape and coverage, metrics, exact pixel patterns for glyphs read off the game, lowercase/tofu fallbacks, floored fractional coordinates, and `wrapTextBox` / `layoutTextBox` against page B7.
 - `monitorConfig.test.mjs` — `media/monitorConfig.js`: the size table round-trips through pixels in both orientations, `nextScreenNumber` reuses a removed slot, and `fitScale` picks one factor for all monitors (and never 0).
 - `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, the tick/send de-duplication, and `game_time_s` counting ticks rather than wall clock.
 - `timeScale.test.mjs` — `media/timeScale.js` and the host's copy of the speed list agree, and anything else sanitises to ×1.
@@ -93,6 +95,8 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
    - `blend.js` — **colour packing + the game's 4-channel blending, pure module** (no DOM/canvas) so `test/blend.test.mjs` runs it in Node. Owns the endianness probe that decides how RGBA bytes pack into an ImageData word.
    - `pixelFont.js` — the 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush), glyphs read off in-game screenshots where available, plus TEXTBOX wrapping/placement (`wrapTextBox` / `layoutTextBox`).
    - `raster.js` — **integer-grid line/circle/triangle/rectangle rasterisers, pure module** (no DOM/canvas — the target is a `plot`/`fillRun` callback) so `test/raster.test.mjs` can run them in Node. Canvas path drawing anti-aliases, which the integer CSS upscale magnifies into a visible haze; Stormworks monitors have no AA. Every rasteriser clips to the screen, so a microcontroller passing ±1e9 coordinates can't hang the panel. The rules are fitted to in-game screenshots — see "Monitor rasterising" below before changing any of them.
+   - `panel.css` — the one stylesheet, shared by `panel.html` and `monitors.html`. Owns `.monitor-canvas`, whose black background is part of the compositing (see "Monitor rasterising").
+   - `globals.d.ts` — ambient `acquireVsCodeApi()` declaration for `npm run check:media`. `media/package.json` is only `{"type": "module"}`, so Node tests can import these files as ES modules; it is excluded from the `.vsix`.
    Coordinate convention is **Stormworks left-handed (X+ East, Y+ Up, Z+ North)** — three.js itself is right-handed, so the camera is positioned to make `+Z` look like "into the screen / north" without any scene-level flipping. The modules are vanilla JS with JSDoc types, checked by `npm run check:media` (strict).
 
 2. **`src/`** — the extension host.
@@ -102,6 +106,7 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
    - `debugConfigPatcher.ts` is the **critical glue**: see "LifeBoatAPI integration" below.
    - `libraryPathInjector.ts` writes the bundled `lua/` path into `lifeboatapi.stormworks.libs.libraryPaths` for editor autocompletion. Re-run on `onDidChangeWorkspaceFolders`. The **runtime** does not depend on this setting — only autocomplete does.
    - `pathUtils.ts` — shared `normalize()` for Windows-safe path comparison (used by both files above).
+   - `log.ts` — the `PhySim` Output channel (`log()` / `showLog()`, behind the `physim.showLog` command). The monitor path has several outcomes that are silent by design (the Windows opt-in left off, 14238 already held, an upstream template change making a patch a no-op); the log is where each one says so.
    - `simStubServer.ts` — the port-14238 stand-in for `STORMWORKS_Simulator.exe`; started from `debugConfigPatcher.ts` before `lua-debug` spawns Lua, whenever `useBuiltInMonitors()` says PhySim is drawing the monitors. Also owns the panel's declared monitors (`configureScreen` / `removeScreen` / `getWantedScreens`) — see "Multiple monitors".
    - `simulatorLuaPatch.ts` — the `_simulator.lua` text surgery (socket injection, POSIX file-scan shim, exe-launch suppression) as a **pure, `vscode`-free module** so `test/simulatorLuaPatch.test.mjs` can run it in Node.
    - `frame.ts` — the `%04d`-length-prefixed framing shared by `physServer.ts` and `simStubServer.ts`.
@@ -152,7 +157,7 @@ LifeBoatAPI gamma-corrects every colour **in Lua** before it reaches us —
 `Simulator_ScreenAPI.lua`'s `_setColorBase` does `255 * ((c/255)/0.85)^(1/2.4)`
 — to replicate what the game does to monitors. It lifts dark tones hard: a
 `setColor` of 30 arrives as 112, and anything from 217 up clips to white. The
-washed-out result is *correct*; don't "fix" it by changing `rgba()`.
+washed-out result is *correct*; don't "fix" it by changing `makeColour()`.
 
 The correction is applied unclamped (255 leaves as 272.9), so the panel's
 optional **True colour** toggle (`unGamma`, off by default) inverts it
@@ -341,8 +346,8 @@ inside a Lua tick, so a stopped Lua loop couldn't be woken again.
 
 ## Coordinate / sign conventions
 
-- Stormworks world: **left-handed**, X+ East / Y+ Up / Z+ North. Stored in `memory/MEMORY.md` because it's easy to get wrong.
-- Rotations are Three.js `Euler XYZ` intrinsic, in radians. CH4-6 expose these directly. The local-axis decomposition formulas in `PhySim.lua` and `panel.js` assume this order — changing it breaks tilt and compass.
+- Stormworks world: **left-handed**, X+ East / Y+ Up / Z+ North. Easy to get wrong, because three.js is right-handed (see `scene.js` above).
+- Rotations are Three.js `Euler XYZ` intrinsic, in radians. CH4-6 expose these directly. The local-axis decomposition formulas in `PhySim.lua:injectAsInputs` and `media/channels.js:deriveChannels` assume this order — changing it breaks tilt and compass.
 - The airplane mesh's wing-tip lights are placed by visual convention (red on +X), not strict aviation port=red. Variable names are `redTip`/`greenTip` to reflect this.
 
 ## When changing the protocol or channels

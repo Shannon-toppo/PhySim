@@ -59,6 +59,7 @@ Module._load = function (request, ...rest) {
   return request === "vscode" ? vscodeStub : realLoad.call(this, request, ...rest);
 };
 const { PhysimDebugPatcher, useBuiltInMonitors } = require("../out/debugConfigPatcher.js");
+const { SessionAuth } = require("../out/sessionAuth.js");
 Module._load = realLoad;
 
 // LifeBoatAPI 0.0.33's generated script, trimmed to the two lines the patcher
@@ -88,7 +89,7 @@ function runConfig(over = {}) {
  * Run the provider on `platform`/`arch`. `files` maps program path → text.
  * Always restores the real process.platform / process.arch.
  */
-async function run(config, { platform = "linux", arch = "x64", setting = false, stub = null, files } = {}) {
+async function run(config, { platform = "linux", arch = "x64", setting = false, stub = null, physAuth, files } = {}) {
   env.setting = setting;
   env.files = new Map(Object.entries(files ?? { "/proj/_build/_simulator.lua": SIMULATOR_LUA }));
   env.writes = [];
@@ -100,7 +101,7 @@ async function run(config, { platform = "linux", arch = "x64", setting = false, 
   Object.defineProperty(process, "platform", { value: platform });
   Object.defineProperty(process, "arch", { value: arch });
   try {
-    const provider = new PhysimDebugPatcher({ fsPath: EXT }, stub);
+    const provider = new PhysimDebugPatcher({ fsPath: EXT }, stub, physAuth);
     return await provider.resolveDebugConfigurationWithSubstitutedVariables(undefined, config);
   } finally {
     Object.defineProperty(process, "platform", realPlatform);
@@ -253,11 +254,29 @@ test("with the real exe in charge, attachToExistingProcess stays false", async (
   assert.match(env.writes[0].text, /_beginSimulation\(\s*false\s*,/);
 });
 
-test("an already patched script is not written again", async () => {
+test("an already patched script only gets this run's tokens, nothing injected twice", async () => {
   await run(runConfig(), { platform: "win32", setting: false });
   const patched = env.writes[0].text;
   await run(runConfig(), { platform: "win32", setting: false, files: { "/proj/_build/_simulator.lua": patched } });
-  assert.equal(env.writes.length, 0);
+  assert.equal(env.writes.length, 1);
+  const again = env.writes[0].text;
+  assert.notEqual(again, patched, "the tokens were renewed");
+  assert.equal(again.split("_physim_socket = ").length, 2);
+});
+
+test("every F6 renews both servers' tokens and writes those same tokens into _simulator.lua", async () => {
+  const physAuth = new SessionAuth();
+  const stub = { ...fakeStub(), auth: new SessionAuth() };
+  await run(runConfig(), { platform: "darwin", arch: "arm64", stub, physAuth });
+  const first = [physAuth.current(), stub.auth.current()];
+  assert.ok(first.every(t => /^[0-9a-f]{32}$/.test(t)));
+  assert.notEqual(first[0], first[1], "one token per port");
+  assert.ok(env.writes[0].text.startsWith(
+    `local _physim_token, _physim_monitor_token = "${first[0]}", "${first[1]}"\n`
+  ));
+  await run(runConfig(), { platform: "darwin", arch: "arm64", stub, physAuth });
+  assert.notEqual(physAuth.current(), first[0]);
+  assert.notEqual(stub.auth.current(), first[1]);
 });
 
 test("upstream changed the template: warn, write nothing, still return the config", async () => {

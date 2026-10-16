@@ -29,9 +29,15 @@
 // SimulatorScreen:new(n)`), so `SCREENSIZE|2|64|64` is all it takes to give
 // the microcontroller a second monitor — no Lua patch, no change to the user's
 // script. SCREENPOWER switches one off again. See "Panel-declared screens".
+//
+// A connection only becomes the client once its first frame carries this
+// session's token (`PHYSIM_AUTH|<token>`, sent by the SimulatorConnection.new
+// wrapper simulatorLuaPatch injects). Until then it is held aside and the
+// current Lua client keeps running — see sessionAuth.ts.
 
 import * as net from "net";
 import { frame, FrameParser } from "./frame";
+import { AuthGate, SessionAuth } from "./sessionAuth";
 
 export const SIM_STUB_PORT = 14238;
 
@@ -192,6 +198,7 @@ export class SimStubServer {
   private server: net.Server | null = null;
   private client: net.Socket | null = null;
   private parser = new FrameParser();
+  private readonly gate: AuthGate;
   private listening = false;
   private screens = new Map<number, ScreenInfo>();
   /**
@@ -213,6 +220,14 @@ export class SimStubServer {
   onFrame: ((commands: DrawCommand[]) => void) | null = null;
 
   private boundPort = SIM_STUB_PORT;
+
+  /**
+   * @param auth renewed by debugConfigPatcher on every F6.
+   * @param authTimeoutMs how long a new connection may take to authenticate (tests shorten it).
+   */
+  constructor(readonly auth: SessionAuth, authTimeoutMs?: number) {
+    this.gate = new AuthGate(auth, authTimeoutMs);
+  }
 
   isListening(): boolean { return this.listening; }
   getPort(): number { return this.boundPort; }
@@ -352,6 +367,7 @@ export class SimStubServer {
         resolve();
       };
       this.endClient();
+      this.gate.dropAll();
       if (!this.server) return done();
       this.server.close(() => done());
     });
@@ -400,19 +416,31 @@ export class SimStubServer {
   }
 
   private onConnection(socket: net.Socket): void {
+    socket.setNoDelay(true);
+    // end(), never destroy(), on rejection too: a real Lua client holding a
+    // stale token should exit cleanly rather than with a traceback.
+    this.gate.admit(socket, (parser, rest) => this.accept(socket, parser, rest), s => s.end());
+  }
+
+  /** The newest authenticated connection wins: F6 again replaces the old Lua. */
+  private accept(socket: net.Socket, parser: FrameParser, rest: string[]): void {
     this.endClient();
-    this.parser.reset();
+    this.parser = parser;
     this.pending = [];
     this.screens.clear();
     this.pushed = false;
     this.client = socket;
-    socket.setNoDelay(true);
-    this.parser.onError = () => this.endClient();
+    parser.onError = () => { if (this.client === socket) this.endClient(); };
     socket.on("data", chunk => {
-      for (const body of this.parser.feed(chunk)) this.handle(body);
+      if (this.client !== socket) return;
+      for (const body of parser.feed(chunk)) this.handle(body);
     });
     socket.on("close", () => { if (this.client === socket) this.client = null; });
     socket.on("error", () => { if (this.client === socket) this.client = null; });
+    for (const body of rest) {
+      if (this.client !== socket) break;
+      this.handle(body);
+    }
   }
 
   private handle(body: string): void {

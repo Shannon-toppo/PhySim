@@ -7,6 +7,7 @@ import { frame, FrameParser } from "../out/frame.js";
 import {
   SimStubServer, splitBody, sanitizeScreenRequest, MAX_SCREENS as HOST_MAX
 } from "../out/simStubServer.js";
+import { SessionAuth } from "../out/sessionAuth.js";
 import {
   SCREEN_SIZES as PANEL_SIZES, DEFAULT_SIZE, MAX_SCREENS as PANEL_MAX
 } from "../media/monitorConfig.js";
@@ -57,23 +58,52 @@ function serverHasClient(server) {
   return Boolean(server.client);
 }
 
-/** Drive a real socket against the server and collect the frames it sends back. */
-async function withClient(fn) {
-  const server = new SimStubServer();
-  // Port 0 = ephemeral, so the suite doesn't collide with a live Extension
-  // Development Host already holding 14238.
-  await server.start(0);
+/** A server whose session token has been issued, as debugConfigPatcher does on F6. */
+function newServer(authTimeoutMs) {
+  const auth = new SessionAuth();
+  auth.renew();
+  return new SimStubServer(auth, authTimeoutMs);
+}
+
+/** Connect and collect every frame the server sends back. */
+async function connect(server) {
   const sock = net.createConnection(server.getPort(), "127.0.0.1");
   const parser = new FrameParser();
   const received = [];
   sock.on("data", c => received.push(...parser.feed(c)));
+  sock.on("error", () => {});
   await new Promise(r => sock.once("connect", r));
-  // The client-side "connect" can fire before the server has run its own
-  // accept handler; give the server's event-loop turn a moment so
-  // server→client sends aren't silently dropped on a still-null client.
+  return { sock, received };
+}
+
+/**
+ * Connect as LifeBoatAPI's patched SimulatorConnection does: the session token
+ * first, then wait until the server has taken the socket as its client, so
+ * server→client sends aren't silently dropped on a still-null client.
+ */
+async function connectAuthed(server) {
+  const c = await connect(server);
+  c.sock.write(frame(`PHYSIM_AUTH|${server.auth.current()}`));
   for (let i = 0; i < 100 && !serverHasClient(server); i++) {
     await new Promise(r => setTimeout(r, 5));
   }
+  return c;
+}
+
+/** Resolves once the server has ended the socket (FIN) or it has closed. */
+const ended = sock => new Promise(r => {
+  if (sock.readableEnded || sock.destroyed) return r();
+  sock.once("end", r);
+  sock.once("close", r);
+});
+
+/** Drive a real socket against the server and collect the frames it sends back. */
+async function withClient(fn) {
+  const server = newServer();
+  // Port 0 = ephemeral, so the suite doesn't collide with a live Extension
+  // Development Host already holding 14238.
+  await server.start(0);
+  const { sock, received } = await connectAuthed(server);
   try {
     await fn(server, sock, received);
   } finally {
@@ -255,21 +285,14 @@ test("removeScreen powers the monitor off — Lua has no delete", async () => {
 });
 
 test("the layout is re-declared on the next connection, after screen 1's config", async () => {
-  const server = new SimStubServer();
+  const server = newServer();
   // Saved from a previous session: the panel restores it before anything runs.
   server.setWantedScreens([
     { number: 1, size: "2x2", poweredOn: true, portrait: false },
     { number: 3, size: "1x1", poweredOn: true, portrait: false }
   ]);
   await server.start(0);
-  const sock = net.createConnection(server.getPort(), "127.0.0.1");
-  const parser = new FrameParser();
-  const received = [];
-  sock.on("data", c => received.push(...parser.feed(c)));
-  await new Promise(r => sock.once("connect", r));
-  for (let i = 0; i < 100 && !serverHasClient(server); i++) {
-    await new Promise(r => setTimeout(r, 5));
-  }
+  const { sock, received } = await connectAuthed(server);
   try {
     // _beginSimulation's own default screen. Our push has to come after it, or
     // that 3x3 would land on top of the user's resized screen 1.
@@ -294,4 +317,93 @@ test("the layout is re-declared on the next connection, after screen 1's config"
   }
   // The layout is the user's, not the session's — stop() must not eat it.
   assert.deepEqual(server.getWantedScreens().map(s => s.number), [1, 3]);
+});
+
+// ── session token (sessionAuth.ts) ─────────────────────────────────────────
+
+test("a connection without the token neither evicts the Lua client nor reaches it", async () => {
+  await withClient(async (server, sock, received) => {
+    const lua = server.client;
+    const intruder = await connect(server);
+    intruder.sock.write(frame("SCREENCONFIG|1|1|9x9|0"));
+    await ended(intruder.sock);
+    assert.equal(server.client, lua, "the Lua client keeps its slot");
+    assert.deepEqual(intruder.received, [], "no reply before authenticating");
+    assert.equal(server.getScreens().length, 0, "the intruder's SCREENCONFIG was never applied");
+    // the real client still works
+    sock.write(frame("SCREENCONFIG|1|1|3x3|0"));
+    await settle();
+    assert.deepEqual(received, ["SCREENSIZE|1|96|96"]);
+  });
+});
+
+test("a wrong or stale token is refused", async () => {
+  await withClient(async (server) => {
+    const lua = server.client;
+    const stale = server.auth.current();
+    server.auth.renew();   // the next F6
+    for (const body of [`PHYSIM_AUTH|${stale}`, "PHYSIM_AUTH|", "PHYSIM_AUTH|nope", "SHUTDOWN|"]) {
+      const c = await connect(server);
+      c.sock.write(frame(body));
+      await ended(c.sock);
+      assert.equal(server.client, lua, body);
+    }
+  });
+});
+
+test("a connection that never speaks is closed after the timeout, the client untouched", async () => {
+  const server = newServer(50);
+  await server.start(0);
+  try {
+    const lua = await connectAuthed(server);
+    const quiet = await connect(server);
+    const t0 = Date.now();
+    await ended(quiet.sock);
+    assert.ok(Date.now() - t0 >= 40, "closed by the timeout, not straight away");
+    assert.ok(serverHasClient(server));
+    lua.sock.destroy();
+    quiet.sock.destroy();
+  } finally {
+    await server.stop();
+  }
+});
+
+test("a corrupt first frame (an HTTP request, say) is refused", async () => {
+  await withClient(async (server) => {
+    const lua = server.client;
+    const c = await connect(server);
+    c.sock.write("GET / HTTP/1.1\r\nHost: 127.0.0.1:14238\r\n\r\n");
+    await ended(c.sock);
+    assert.equal(server.client, lua);
+  });
+});
+
+test("the next run's Lua, holding the new token, replaces the old one", async () => {
+  await withClient(async (server, oldSock) => {
+    server.auth.renew();
+    const fresh = await connect(server);
+    // token and the first command in one chunk, as LifeBoatAPI sends them
+    fresh.sock.write(Buffer.concat([
+      frame(`PHYSIM_AUTH|${server.auth.current()}`),
+      frame("SCREENCONFIG|1|1|2x2|0")
+    ]));
+    await ended(oldSock);
+    await settle();
+    assert.deepEqual(fresh.received, ["SCREENSIZE|1|64|64"], "frames behind the token are handled");
+    // the evicted socket no longer feeds the session
+    oldSock.write(frame("SCREENCONFIG|1|1|9x5|0"));
+    await settle();
+    assert.equal(server.getScreens()[0].width, 64);
+    fresh.sock.destroy();
+  });
+});
+
+test("stop() does not wait on a connection still being held for its token", async () => {
+  const server = newServer(60_000);
+  await server.start(0);
+  const quiet = await connect(server);
+  const t0 = Date.now();
+  await server.stop();
+  assert.ok(Date.now() - t0 < 1000);
+  quiet.sock.destroy();
 });

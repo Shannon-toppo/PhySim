@@ -32,20 +32,45 @@ function luaStringLiteral(s) {
 }
 
 export class LuaPhySim {
-  constructor() {
+  /**
+   * @param {{ token?: string }} [opts] with `token`, the patched sandbox's
+   *   `_physim_token` is set and tcp() hands out a fake non-blocking socket
+   *   (see below) instead of the pre-connected `client = {}`.
+   */
+  constructor(opts = {}) {
     this.L = lauxlib.luaL_newstate();
     lualib.luaL_openlibs(this.L);
     // Stub socket + load PhySim.lua. `client = {}` is truthy, so update()
     // skips reconnecting; select() returning {} breaks the drain loop.
+    //
+    // The fake socket behaves like LuaSocket's non-blocking one: the first
+    // send() fails with "timeout" (connect still in flight), later ones take
+    // at most 5 bytes and report a partial send. What got through collects
+    // in `_sent`.
     this.run(`
+      _sent, _sendCalls = "", 0
+      _fakeSock = {
+        settimeout = function() end,
+        connect    = function() return nil, "timeout" end,
+        close      = function() end,
+        send       = function(self, data)
+          _sendCalls = _sendCalls + 1
+          if _sendCalls == 1 then return nil, "timeout", 0 end
+          local n = math.min(#data, 5)
+          _sent = _sent .. data:sub(1, n)
+          if n < #data then return nil, "timeout", n end
+          return n
+        end
+      }
       _physim_socket = {
-        tcp    = function() return nil, "phySim test stub" end,
+        tcp    = function() ${opts.token ? "return _fakeSock" : 'return nil, "phySim test stub"'} end,
         select = function() return {} end
       }
     `);
+    if (opts.token) this.run(`_physim_token = ${luaStringLiteral(opts.token)}`);
     const src = readFileSync(PHYSIM_LUA, "utf8");
     this.run(src);
-    this.run(`PhySim.client = {}`);
+    if (!opts.token) this.run(`PhySim.client = {}`);
   }
 
   /** Execute a chunk of Lua; throws on Lua errors. */

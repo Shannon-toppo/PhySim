@@ -4,6 +4,7 @@ import { PhysSimPanelManager } from "./physSimPanel";
 import { ensureInjected } from "./libraryPathInjector";
 import { PhysimDebugPatcher } from "./debugConfigPatcher";
 import { SimStubServer } from "./simStubServer";
+import { SessionAuth } from "./sessionAuth";
 import { log, showLog, disposeLog } from "./log";
 
 function isLifeBoatSimulator(session: vscode.DebugSession): boolean {
@@ -16,7 +17,7 @@ function readPort(): number {
 }
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
-  const server = new PhysServer();
+  const server = new PhysServer(new SessionAuth());
   // Stand-in for LifeBoatAPI's Windows-only STORMWORKS_Simulator.exe: PhySim
   // answers on port 14238 and renders the microcontroller's monitors inside
   // the panel. Constructed on both platforms but only *started* when it is
@@ -25,7 +26,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   // debugConfigPatcher's useBuiltInMonitors(), so the setting takes effect
   // without a window reload; constructing the server binds nothing.
   const stub = process.platform === "darwin" || process.platform === "win32"
-    ? new SimStubServer()
+    ? new SimStubServer(new SessionAuth())
     : null;
   const panel = new PhysSimPanelManager(ctx, server, stub);
 
@@ -37,7 +38,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     // Re-run library-path injection when a new workspace folder is added, so
     // editor autocompletion picks up PhySim in projects opened after activate.
     vscode.workspace.onDidChangeWorkspaceFolders(() => { ensureInjected(ctx); }),
-    vscode.debug.registerDebugConfigurationProvider("lua", new PhysimDebugPatcher(ctx.extensionUri, stub)),
+    vscode.debug.registerDebugConfigurationProvider("lua", new PhysimDebugPatcher(ctx.extensionUri, stub, server.auth)),
     vscode.debug.onDidStartDebugSession(async session => {
       if (!isLifeBoatSimulator(session)) return;
       const port = readPort();

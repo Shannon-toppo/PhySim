@@ -153,3 +153,26 @@ test("a closed socket puts the simulator back to 60 Hz", () => {
   assert.equal(sim.evalString("tostring(PhySim.client)"), "nil");
   assert.equal(Number(sim.evalString(`string.format("%.17g", fakeSim._timePerFrame)`)), 1 / 60);
 });
+
+test("the first bytes PhySim.lua sends are its session token, partial sends and all", () => {
+  const token = "0123456789abcdef0123456789abcdef";
+  const sim = new LuaPhySim({ token });
+  sim.run("PhySim:new()");
+  for (let i = 0; i < 20; i++) sim.run("PhySim:update()");
+  const body = `PHYSIM_AUTH|${token}`;
+  assert.equal(sim.evalString("_sent"), String(body.length).padStart(4, "0") + body);
+  // and nothing after it: PhySim.lua has nothing else to say
+  const calls = Number(sim.evalString("_sendCalls"));
+  for (let i = 0; i < 5; i++) sim.run("PhySim:update()");
+  assert.equal(Number(sim.evalString("_sendCalls")), calls);
+});
+
+test("a reconnect queues the token again", () => {
+  const token = "fedcba9876543210fedcba9876543210";
+  const sim = new LuaPhySim({ token });
+  sim.run("PhySim:new()");
+  for (let i = 0; i < 20; i++) sim.run("PhySim:update()");
+  sim.run("PhySim:close(); _sent = ''");
+  for (let i = 0; i < 20; i++) sim.run("PhySim:update()");
+  assert.equal(sim.evalString("_sent"), `0044PHYSIM_AUTH|${token}`);
+});

@@ -1,5 +1,6 @@
 import * as net from "net";
 import { frame } from "./frame";
+import { AuthGate, SessionAuth } from "./sessionAuth";
 
 export interface PhysState {
   position: [number, number, number];
@@ -54,6 +55,12 @@ export function encodeRate(scale: number): Buffer {
   return frame(`RATE|${fmt(TICKS_PER_SEC * sanitizeTimeScale(scale))}`);
 }
 
+/**
+ * Single-client stream to PhySim.lua. A connection gets nothing until its
+ * first frame is `PHYSIM_AUTH|<token>` (PhySim.lua sends it from the
+ * `_physim_token` simulatorLuaPatch puts in the sandbox), so another local
+ * process can neither read the pose stream nor push the Lua client out.
+ */
 export class PhysServer {
   private server: net.Server | null = null;
   private client: net.Socket | null = null;
@@ -61,6 +68,15 @@ export class PhysServer {
   private timeScale = 1;
   private port = 14239;
   private listening = false;
+  private readonly gate: AuthGate;
+
+  /**
+   * @param auth renewed by debugConfigPatcher on every F6.
+   * @param authTimeoutMs how long a new connection may take to authenticate (tests shorten it).
+   */
+  constructor(readonly auth: SessionAuth, authTimeoutMs?: number) {
+    this.gate = new AuthGate(auth, authTimeoutMs);
+  }
 
   isListening(): boolean { return this.listening; }
   getPort(): number { return this.port; }
@@ -74,7 +90,11 @@ export class PhysServer {
         this.listening = false;
         reject(err);
       });
-      this.server.listen(port, "127.0.0.1", () => {
+      const server = this.server;
+      server.listen(port, "127.0.0.1", () => {
+        // Tests pass 0 for an ephemeral port; report the one actually bound.
+        const addr = server.address();
+        if (typeof addr === "object" && addr !== null) this.port = addr.port;
         this.listening = true;
         resolve();
       });
@@ -85,6 +105,7 @@ export class PhysServer {
     return new Promise(resolve => {
       const done = () => { this.listening = false; this.server = null; resolve(); };
       if (this.client) { try { this.client.destroy(); } catch {} this.client = null; }
+      this.gate.dropAll();
       if (!this.server) return done();
       this.server.close(() => done());
     });
@@ -117,11 +138,16 @@ export class PhysServer {
   }
 
   private onConnection(socket: net.Socket): void {
+    socket.setNoDelay(true);
+    this.gate.admit(socket, () => this.accept(socket), s => s.destroy());
+  }
+
+  /** The newest authenticated connection wins: F6 again replaces the old Lua. */
+  private accept(socket: net.Socket): void {
     if (this.client && !this.client.destroyed) {
       try { this.client.destroy(); } catch {}
     }
     this.client = socket;
-    socket.setNoDelay(true);
     socket.on("close", () => { if (this.client === socket) this.client = null; });
     socket.on("error", () => { if (this.client === socket) this.client = null; });
     // send initial state so the client has something even before the user moves the gizmo

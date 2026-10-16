@@ -44,8 +44,9 @@ sandboxEnv.require("MyMicrocontroller")
 simulator:_giveControlToMainLoop()
 `;
 
-const WINDOWS = { posixFileScan: false, builtInMonitors: false };
-const MACOS = { posixFileScan: true, builtInMonitors: true };
+const TOKENS = { physToken: "0123456789abcdef0123456789abcdef", monitorToken: "fedcba9876543210fedcba9876543210" };
+const WINDOWS = { posixFileScan: false, builtInMonitors: false, ...TOKENS };
+const MACOS = { posixFileScan: true, builtInMonitors: true, ...TOKENS };
 
 test("socket is injected after createSandbox, never before", () => {
   const r = patchSimulatorLua(SAMPLE, WINDOWS);
@@ -71,7 +72,7 @@ test("the POSIX shim is Windows-free: not added when the platform doesn't need i
 });
 
 test("built-in monitors flip _beginSimulation to attach mode", () => {
-  const on = patchSimulatorLua(SAMPLE, { posixFileScan: false, builtInMonitors: true });
+  const on = patchSimulatorLua(SAMPLE, { posixFileScan: false, builtInMonitors: true, ...TOKENS });
   assert.equal(on.beginSimulationFound, true);
   assert.ok(on.text.includes("simulator:_beginSimulation(true, arg[1], arg[2])"));
   assert.ok(!on.text.includes("_beginSimulation(false"));
@@ -121,9 +122,89 @@ test("whitespace variations in the generated call still match", () => {
 
 test("the injected Lua is syntactically valid (compiled by fengari)", () => {
   assert.equal(luaSyntaxError(SAMPLE), null, "the sample itself must compile");
-  for (const opts of [WINDOWS, MACOS, { posixFileScan: true, builtInMonitors: false }]) {
+  for (const opts of [WINDOWS, MACOS, { posixFileScan: true, builtInMonitors: false, ...TOKENS }]) {
     const r = patchSimulatorLua(SAMPLE, opts);
     assert.equal(luaSyntaxError(r.text), null,
       `patched output failed to compile for ${JSON.stringify(opts)}`);
+  }
+});
+
+// ── session tokens (sessionAuth.ts) ───────────────────────────────────────
+
+/**
+ * Run a patched _simulator.lua against stand-ins for the LifeBoatAPI tables it
+ * touches, and report what reached the sandbox and the 14238 connection.
+ */
+function runPatched(source) {
+  const L = lauxlib.luaL_newstate();
+  lualib.luaL_openlibs(L);
+  const harness = `
+    arg = { "exe", "log" }
+    require = function() return "socket-module" end
+    sent = {}
+    LifeBoatAPI = { Tools = {
+      FileSystemUtils = {},
+      Filepath = { new = function(_, p) return p end },
+      SimulatorSandbox = { createSandbox = function() ENV = { require = function() end }; return ENV end },
+      SimulatorConnection = { new = function(this)
+        return { sendCommand = function(self, ...) sent[#sent + 1] = table.concat({ ... }, "|") end }
+      end },
+      Simulator = { new = function()
+        return {
+          _beginSimulation = function(self)
+            self._connection = LifeBoatAPI.Tools.SimulatorConnection:new()
+            self._connection:sendCommand("SCREENCONFIG", 1)
+          end,
+          _giveControlToMainLoop = function() end
+        }
+      end }
+    } }
+  `;
+  for (const chunk of [harness, source, "RESULT = ENV._physim_token .. '#' .. table.concat(sent, ',')"]) {
+    if (lauxlib.luaL_dostring(L, to_luastring(chunk)) !== lua.LUA_OK) {
+      throw new Error(lua.lua_tojsstring(L, -1));
+    }
+  }
+  lua.lua_getglobal(L, "RESULT");
+  const [token, sent] = lua.lua_tojsstring(L, -1).split("#");
+  return { token, sent: sent ? sent.split(",") : [] };
+}
+
+test("the 14238 token is the first frame on the monitor connection, ahead of SCREENCONFIG", () => {
+  const r = runPatched(patchSimulatorLua(SAMPLE, MACOS).text);
+  assert.deepEqual(r.sent, [`PHYSIM_AUTH|${TOKENS.monitorToken}`, "SCREENCONFIG|1"]);
+});
+
+test("PhySim.lua's sandbox gets the 14239 token, not the monitor one", () => {
+  const r = runPatched(patchSimulatorLua(SAMPLE, MACOS).text);
+  assert.equal(r.token, TOKENS.physToken);
+});
+
+test("with the real exe in charge, the exe's connection is left alone", () => {
+  const r = runPatched(patchSimulatorLua(SAMPLE, WINDOWS).text);
+  assert.deepEqual(r.sent, ["SCREENCONFIG|1"]);
+  assert.equal(r.token, TOKENS.physToken);
+});
+
+test("a second pass with a new session's tokens replaces them and injects nothing twice", () => {
+  const once = patchSimulatorLua(SAMPLE, MACOS);
+  const next = { ...MACOS, physToken: "1".repeat(32), monitorToken: "2".repeat(32) };
+  const twice = patchSimulatorLua(once.text, next);
+  assert.equal(twice.patched, true);
+  assert.ok(!twice.text.includes(TOKENS.physToken) && !twice.text.includes(TOKENS.monitorToken));
+  assert.equal(twice.text.split("_physim_socket = ").length, 2, "socket injected once");
+  assert.equal(twice.text.split("SimulatorConnection.new = ").length, 2, "wrapper injected once");
+  assert.deepEqual(runPatched(twice.text).sent, [`PHYSIM_AUTH|${"2".repeat(32)}`, "SCREENCONFIG|1"]);
+});
+
+test("nothing to inject means no token line either", () => {
+  const r = patchSimulatorLua("print('a different template')\n", MACOS);
+  assert.equal(r.patched, false);
+});
+
+test("a token that is not lowercase hex never reaches the Lua source", () => {
+  for (const bad of ['"..os.exit()..', "ABCDEF", ""]) {
+    assert.throws(() => patchSimulatorLua(SAMPLE, { ...MACOS, monitorToken: bad }), /lowercase hex/);
+    assert.throws(() => patchSimulatorLua(SAMPLE, { ...MACOS, physToken: bad }), /lowercase hex/);
   }
 });

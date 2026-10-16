@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { normalize } from "./pathUtils";
 import { SimStubServer, SIM_STUB_PORT } from "./simStubServer";
 import { patchSimulatorLua } from "./simulatorLuaPatch";
+import { SessionAuth } from "./sessionAuth";
 import { log } from "./log";
 
 // LifeBoatAPI's SimulatorSandbox builds its own restricted `require` that only
@@ -23,6 +24,8 @@ import { log } from "./log";
 //     even without any workspace setting.
 //   * Patch the generated `_simulator.lua` to copy the host (non-sandboxed)
 //     `socket` library into the sandbox env as `_physim_socket`.
+//   * Renew both servers' session tokens and write them into the same file,
+//     so only this run's Lua can claim ports 14238/14239 (sessionAuth.ts).
 
 /**
  * Whether PhySim renders the microcontroller's monitors itself this run.
@@ -45,7 +48,8 @@ export function useBuiltInMonitors(): boolean {
 export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly stub: SimStubServer | null = null
+    private readonly stub: SimStubServer | null = null,
+    private readonly physAuth: SessionAuth = new SessionAuth()
   ) {}
 
   async resolveDebugConfigurationWithSubstitutedVariables(
@@ -54,6 +58,11 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
     _token?: vscode.CancellationToken
   ): Promise<vscode.DebugConfiguration | undefined | null> {
     if (config.type !== "lua" || config.name !== "Run Simulator") return config;
+
+    // New tokens before anything can connect: a Lua process from an earlier
+    // run keeps its connection, but only this run's Lua can take the slot.
+    const physToken = this.physAuth.renew();
+    const monitorToken = (this.stub?.auth ?? new SessionAuth()).renew();
 
     // (0) Stand in for STORMWORKS_Simulator.exe on 14238 when we are the ones
     // drawing the monitors. The Lua client connects once with no retry as soon
@@ -123,7 +132,9 @@ export class PhysimDebugPatcher implements vscode.DebugConfigurationProvider {
       const text = new TextDecoder("utf-8").decode(bytes);
       const result = patchSimulatorLua(text, {
         posixFileScan: process.platform === "darwin",
-        builtInMonitors
+        builtInMonitors,
+        physToken,
+        monitorToken
       });
       log(
         `_simulator.lua: socket injection ${result.sandboxLineFound ? "ok" : "FAILED"}` +

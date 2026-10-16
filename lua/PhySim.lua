@@ -5,6 +5,9 @@
 --   "%04d" .. "PHYS|posX|posY|posZ|rotX|rotY|rotZ|velX|velY|velZ|angVelX|angVelY|angVelZ"
 --   "%04d" .. "RATE|ticksPerSecond"     (the panel's simulation speed; 60 = real time)
 --
+-- The server sends nothing until this side's first frame proves the session:
+--   "%04d" .. "PHYSIM_AUTH|token"        (token = `_physim_token`, renewed every F6)
+--
 -- Coordinates are Stormworks left-handed: +X East, +Y Up, +Z North. Rotations
 -- are Euler XYZ in radians, normalized to [-π, π). Velocities are per tick.
 --
@@ -48,6 +51,10 @@ if not _socket then
     return
 end
 
+-- This run's token for the panel's server, put next to `_physim_socket` by the
+-- same patch. Sent as the first frame of every connection.
+local _token = _physim_token
+
 -- Module / singleton. Published as a global so the sandboxed require() (which
 -- discards return values) still gives the user access.
 PhySim = {
@@ -56,6 +63,8 @@ PhySim = {
     client          = nil,
     isAlive         = false,
     _buf            = "",
+    -- Bytes still to send: the auth frame, until a non-blocking send takes it.
+    _out            = "",
     -- Tick rate the panel asked for, and whether it still has to reach the
     -- simulator. Applied in injectAsInputs, the only place we get `simulator`;
     -- `_sim` remembers it so a closed socket can put 60 Hz back.
@@ -77,6 +86,7 @@ function PhySim:new(host, port)
     self.host    = host or "127.0.0.1"
     self.port    = port or 14239
     self._buf    = ""
+    self._out    = ""
     self.client  = nil
     self.isAlive = false
     self._tps       = 60
@@ -103,7 +113,20 @@ function PhySim:_tryConnect()
     end
     self.client  = sock
     self.isAlive = true
+    if _token then
+        local body = "PHYSIM_AUTH|" .. _token
+        self._out = string.format("%04d", #body) .. body
+    end
     return true
+end
+
+-- Push queued bytes. The connect is non-blocking, so the first attempts can
+-- fail with "timeout" until it completes; update() simply tries again next tick.
+function PhySim:_flush()
+    if #self._out == 0 then return end
+    local last, err, partial = self.client:send(self._out)
+    local sent = last or partial or 0
+    if sent > 0 then self._out = self._out:sub(sent + 1) end
 end
 
 -- Wrap an angle into [-π, π). CH4-6 must stay bounded however far the panel's
@@ -128,6 +151,7 @@ function PhySim:update()
     if not self.client then
         if not PhySim._tryConnect(self) then return end
     end
+    PhySim._flush(self)
 
     -- pull bytes until select() says nothing is ready
     while true do
@@ -299,6 +323,7 @@ function PhySim:close()
         self.client:close()
         self.client = nil
     end
+    self._out = ""
     self.isAlive = false
     PhySim._setRate(self, 60)
 end

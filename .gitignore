@@ -51,3 +51,15 @@ tmp/
 
 # 個人用メモ（公開しない）
 doc/monitor_claude.md
+doc/img/monitor-guide/01-half-lines.svg
+doc/img/monitor-guide/02-diamond-exit.svg
+doc/img/monitor-guide/02b-diagonal.svg
+doc/img/monitor-guide/03-short-lines.svg
+doc/img/monitor-guide/04-rect.svg
+doc/img/monitor-guide/05-circle-r22.svg
+doc/img/monitor-guide/06-small-circles.svg
+doc/img/monitor-guide/07-fill-vs-outline.svg
+doc/img/monitor-guide/08-alpha-stack.svg
+doc/img/monitor-guide/09-textbox.svg
+doc/monitor-guide.md
+tools/docfigs/monitor-guide.mjs

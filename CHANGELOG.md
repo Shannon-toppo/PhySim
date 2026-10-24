@@ -4,6 +4,11 @@ PhySim の主な変更点です。各バージョンの詳細は [GitHub Release
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-24
+
+### 修正
+- PhySim が開くポート（14238 と 14239）に、F6 で起動したシミュレーター以外のプログラムが接続できないようにしました。以前は同じマシン上のプログラムや Web ページが接続するだけで、動いているシミュレーションを止められました。F6 のたびに作り直すトークンで接続を確かめます。
+
 ## [1.2.0] - 2026-10-03
 
 ### 追加
@@ -132,7 +137,8 @@ VS Code Marketplace で公開した最初のバージョンです（プレビュ
 
 - 最初の公開版。
 
-[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/1.2.0...HEAD
+[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/1.2.1...HEAD
+[1.2.1]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.2.1
 [1.2.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.2.0
 [1.1.2]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.2
 [1.1.1]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.1.1

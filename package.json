@@ -2,7 +2,7 @@
   "name": "physim",
   "displayName": "Stormworks Physics Sensor Sim",
   "description": "%description%",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "shannon-toppo",
   "icon": "images/icon.png",
   "license": "MIT",

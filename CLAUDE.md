@@ -20,6 +20,7 @@ npm test                   # compile + node --test test/**/*.test.mjs
 npm run check:package      # vsce ls piped into scripts/check-package.mjs — the .vsix has every runtime file and no dev-only directory
 npx vsce package           # build physim-x.y.z.vsix for distribution
 scripts/build-luasocket-macos.sh  # rebuilds the committed universal (arm64+x86_64) luasocket/darwin/*.so — only needed when changing luasocket/Lua versions
+node tools/docfigs/monitor-guide.mjs  # regenerates doc/img/monitor-guide/*.svg (the figures of doc/monitor-guide.md) from raster.js / pixelFont.js
 ```
 
 Debugging the extension itself: open the folder in VSCode and press **F5**. `.vscode/launch.json` is already wired (Extension Development Host, preLaunchTask = `npm: watch`). It is `watch` rather than `compile` on purpose: a one-shot build only runs on F5, so a Reload Window in the dev host would leave the host on a stale `out/` while `media/` — read from disk on every load — moves on.

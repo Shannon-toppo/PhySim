@@ -49,3 +49,21 @@ export function sendScreenSet(s) {
 export function sendScreenRemove(screen) {
   vscode.postMessage({ type: "screenRemove", screen });
 }
+
+/**
+ * One of the simulator's buttons went down or came up (controls.js).
+ * @param {number} number 1..10
+ * @param {boolean} pressed
+ */
+export function sendControlButton(number, pressed) {
+  vscode.postMessage({ type: "controlButton", number, pressed });
+}
+
+/**
+ * A slider moved.
+ * @param {number} number 1..10
+ * @param {number} value 0..1
+ */
+export function sendControlSlider(number, value) {
+  vscode.postMessage({ type: "controlSlider", number, value });
+}

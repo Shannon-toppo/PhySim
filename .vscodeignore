@@ -9,6 +9,12 @@ scripts/**
 tools/**
 test/**
 node_modules/**
+!node_modules/@stormcat-works/storm-lua-engine/package.json
+!node_modules/@stormcat-works/storm-lua-engine/LICENSE
+!node_modules/@stormcat-works/storm-lua-engine/*LICENSE*
+!node_modules/@stormcat-works/storm-lua-engine/dist/**/*.js
+!node_modules/@stormcat-works/storm-lua-engine/dist/**/*.wasm
+!node_modules/@stormcat-works/storm-lua-engine/dist/**/package.json
 **/tsconfig.json
 tsconfig.media.json
 eslint.config.mjs

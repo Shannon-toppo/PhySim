@@ -404,3 +404,50 @@ self._screens[screenNumber] = self._screens[screenNumber] or SimulatorScreen:new
 パネルはそれをドロップダウンに追加して表示するので、ホストが表の外を弾くと
 「その画面の Portrait チェックボックスだけ効かない」という死んだ操作ができてしまう。
 `sanitizeScreenRequest` は `NxM`（各辺1〜9ブロック）なら通す。
+
+## LifeBoatAPI から Storm Lua Engine へ（v2.0.0, 2026-11）
+
+PhySim がマイコンの Lua を自分で実行するようにした。実行は npm パッケージ
+`@stormcat-works/storm-lua-engine` 0.4.1（Storm Lua Engine、WebAssembly）で、
+拡張ホストのワーカースレッドの中で動く。LifeBoatAPI への依存（`extensionDependencies`）は外した。
+
+**やめたもの** — 1.x の連携の仕組みは全部消した。TCP 14239 で姿勢を送る `physServer.ts`、
+`STORMWORKS_Simulator.exe` の代わりに 14238 で描画命令を受ける `simStubServer.ts`、
+`%04d` フレーミングの `frame.ts`、接続トークンの `sessionAuth.ts`、
+`_simulator.lua` を書き換える `debugConfigPatcher.ts` / `simulatorLuaPatch.ts`、
+補完用に設定へパスを書く `libraryPathInjector.ts`、`pathUtils.ts`、macOS 用の
+luasocket（`luasocket/darwin/`、`scripts/build-luasocket-macos.sh`）、
+webview 側のラスタライザ `media/raster.js` / `blend.js` / `pixelFont.js` と、
+それぞれのテスト。上の「ファイル構成（最終）」は 1.x 時点のもので、今の構成は
+`CLAUDE.md` の Architecture にある。
+
+**代わりに入れたもの**
+- `src/engine/`: ワーカー（`worker.ts`、60 Hz × 速度で tick）、1回の実行を持つ
+  `runner.ts`（tick を「既定入力と onLBSimulatorTick → onTick → モニターごとの onDraw」の
+  フェーズの列として回し、ブレークポイントで止まったフェーズをそこから再開する）、
+  LifeBoatAPI の `simulator` オブジェクトを Lua で作り直した `prelude.ts`、
+  `require` の名前解決 `sourceRoots.ts`、モニター管理 `screens.ts`。
+- `src/simulation.ts`: パネルと実行の間に立つ。パネルの状態（姿勢・速度・モニター配置）を
+  覚えておき、次の実行の最初の tick から渡す。
+- `src/debugSession.ts`: Debug Adapter Protocol。実行は全部 `physim` 型のデバッグセッションになった。
+- `src/build.ts` ほか: エンジンのコンパイラ `buildLifeboat` で結合・`---@section` 削除・minify。
+
+**LifeBoatAPI 向けのスクリプトを動かし続けるために残したもの** — `simulator` の
+メソッド、毎 tick のタッチ既定値（画面1 → bool 1-2 / number 1-6、スクリプトが一度書いた
+チャンネルは上書きしない）、`onLBSimulatorTick`、ドット区切りで include-once の `require`
+（`init.lua`、`.luah` も）、`setScreen` の番号の規則、ワークスペースに残っている
+`lifeboatapi.stormworks.libs.libraryPaths` の読み取り。LifeBoatAPI の Lua ライブラリ自体は同梱しない。
+
+**モニター** — 描画はエンジンが行い、webview は RGBA のフレームを黒地のキャンバスに
+置くだけになった。`test/ingame.test.mjs` は検証カードをエンジンで動かして fixture と
+比べるように変え、86 ページ全部が画素単位で一致した。`snapUnits()` は fixture の読み取り側
+（`tools/ingame/analysis/ties.mjs`）に移した。LifeBoatAPI のガンマ補正が無くなったので、
+色は `setColor` の値そのままになり、True colour のトグルは削除した。
+
+**シミュレーション速度** — ワーカーの tick 間隔を直接伸ばすので、`PhySim.lua` を使わない
+スクリプトにも効く。1.x の `RATE` メッセージと `simulator._timePerFrame` の書き換えは消えた。
+
+**確かめていないこと** — テストは macOS 上の Node で実行した（297 件）。実際の VSCode の
+画面（パネルのモニター表示、デバッグ UI、F6 / F7）と、Windows・Linux はまだ見ていない。
+`engines.vscode` を `^1.101.0` にしたが、エンジンが求める Node 22.18 以上を同梱する
+最初の VSCode がどれかは確かめていない。

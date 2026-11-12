@@ -22,18 +22,23 @@ const required = [
   "LICENSE",
   "images/icon.png",
   "lua/PhySim.lua",
-  "luasocket/darwin/socket/core.so",
-  "luasocket/darwin/mime/core.so",
+  // the engine is the one runtime dependency; .vscodeignore lets its dist/ through
+  "node_modules/@stormcat-works/storm-lua-engine/package.json",
+  "node_modules/@stormcat-works/storm-lua-engine/dist/index.js",
+  "node_modules/@stormcat-works/storm-lua-engine/dist/wasm/storm_lua_wasm.js",
+  "node_modules/@stormcat-works/storm-lua-engine/dist/wasm/storm_lua_wasm.wasm",
+  "node_modules/@stormcat-works/storm-lua-engine/dist/compiler-wasm/compiler_bg.wasm",
   // copied in by scripts/copy-three.js, not committed
   "media/three/three.module.js",
   "media/three/addons/controls/OrbitControls.js",
   "media/three/addons/controls/TransformControls.js",
-  ...ls("src/").filter(f => f.endsWith(".ts")).map(f => `out/${f.slice(0, -3)}.js`),
+  ...["", "engine/", "agent/"].flatMap(d => ls(`src/${d}`).filter(f => f.endsWith(".ts")).map(f => `out/${d}${f.slice(0, -3)}.js`)),
   ...ls("media/").filter(f => /\.(js|html|css)$/.test(f)).map(f => `media/${f}`)
 ];
 
 const forbidden = [
-  /^(src|test|doc|tools|scripts|node_modules|\.github|\.vscode|\.claude)\//,
+  /^(src|test|doc|tools|scripts|\.github|\.vscode|\.claude)\//,
+  /^node_modules\/(?!@stormcat-works\/storm-lua-engine\/)/,
   /\.(ts|map|vsix)$/
 ];
 

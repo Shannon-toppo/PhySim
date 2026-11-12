@@ -8,6 +8,14 @@ D9 だけ Mac でも撮った。
 参考: 検証機は、A〜G のどのカードも Windows 機が GeForce Game Ready ドライバー 616.92、
 Mac が macOS 27.0。
 
+> **2026-11-12 追記（2.0.0）:** この文書は測定の記録で、測定値と結論はそのまま残している。
+> 文中の `media/raster.js`・`media/blend.js`・`media/pixelFont.js`・`mcScreen.js` の `plotter()` は
+> 1.x の PhySim の自前実装を指す。2.0.0 ではモニターの描画を Storm Lua Engine
+> （`@stormcat-works/storm-lua-engine` 0.4.1）に任せ、これらは削除した。今の
+> `test/ingame.test.mjs` は検証カードをエンジンで動かし、fixture の 86 ページ全部が
+> 画素単位で一致することを確かめている。格子のちょうど中間の丸めを予測する `snapUnits()` は
+> `tools/ingame/analysis/ties.mjs` に移した。
+
 **結論：モニターの描画は GPU のラスタライズ規則そのもので、図形は Mac と Windows で
 1画素も違わない。** A・B・C の全ページで両者の点灯画素集合が完全一致した。
 （例外は頂点が 1/256px の格子のちょうど中間に乗ったときで、F3 で 17 画素違った。
@@ -190,7 +198,8 @@ dst.a   ← α·α       + (1−α)·dst.a        ← アルファにも同じ�
 
 ## PhySim への反映状況
 
-全項目反映済み。
+全項目反映済み（1.x の時点。2.0.0 では下の表の実装を削除し、描画は Storm Lua Engine が行う。
+同じ規則に従うことは `test/ingame.test.mjs` で確かめている）。
 
 | 項目 | 反映先 |
 |---|---|

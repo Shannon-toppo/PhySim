@@ -1,13 +1,13 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as os from "os";
-import { PhysServer, PhysState, ZERO_STATE, sanitizeTimeScale } from "./physServer";
-import { SimStubServer, ScreenRequest, sanitizeScreenRequest } from "./simStubServer";
+import { PhysState, Triple, ZERO_STATE, sanitizePhysState, sanitizeTimeScale } from "./engine/physState";
+import { ScreenRequest, sanitizeScreenRequest } from "./engine/screens";
+import { Simulation } from "./simulation";
+import type { ControlsInfo } from "./engine/controls";
 import { CsvLogger, defaultLogPath } from "./csvLogger";
 import { log } from "./log";
 import { Page, PageValues, substituteTemplate } from "./template";
-
-type Triple = [number, number, number];
 
 interface StateMsg {
   type: "state";
@@ -20,7 +20,7 @@ interface PresetSaveMsg { type: "presetSave"; name: string; state: PhysState; }
 interface PresetLoadMsg { type: "presetLoad"; name: string; }
 interface PresetDeleteMsg { type: "presetDelete"; name: string; }
 interface PresetListRequestMsg { type: "presetListRequest"; }
-/** macOS monitor stand-in: pointer input on a rendered screen (see simStubServer). */
+/** Pointer input on a rendered monitor. */
 interface TouchMsg {
   type: "touch";
   screen: number;
@@ -49,7 +49,10 @@ interface CsvStopMsg { type: "csvStop"; samples?: unknown; }
 /** Simulation speed picked in the toolbar (one of TIME_SCALES). */
 interface TimeScaleMsg { type: "timeScale"; scale: unknown; }
 /** Everything the monitor section posts — from the panel or the monitor window. */
-type MonitorMsg = TouchMsg | ScreenRequestMsg | ScreenSetMsg | ScreenRemoveMsg;
+/** The simulator's buttons and sliders, shown below the monitors. */
+interface ControlButtonMsg { type: "controlButton"; number: unknown; pressed: unknown; }
+interface ControlSliderMsg { type: "controlSlider"; number: unknown; value: unknown; }
+type MonitorMsg = TouchMsg | ScreenRequestMsg | ScreenSetMsg | ScreenRemoveMsg | ControlButtonMsg | ControlSliderMsg;
 type FromWebview =
   StateMsg | PresetSaveMsg | PresetLoadMsg | PresetDeleteMsg | PresetListRequestMsg
   | MonitorMsg
@@ -70,16 +73,6 @@ const MONITORS_KEY = "physim.monitors";
  */
 const TIME_SCALE_KEY = "physim.timeScale";
 const MAX_PRESET_NAME_LEN = 64;
-
-function isTriple(v: unknown): v is Triple {
-  return Array.isArray(v) && v.length === 3 && v.every(n => typeof n === "number" && Number.isFinite(n));
-}
-function sanitizePresetState(s: unknown): PhysState | null {
-  if (!s || typeof s !== "object") return null;
-  const o = s as Record<string, unknown>;
-  if (!isTriple(o.position) || !isTriple(o.rotation) || !isTriple(o.velocity) || !isTriple(o.angularVelocity)) return null;
-  return { position: o.position, rotation: o.rotation, velocity: o.velocity, angularVelocity: o.angularVelocity };
-}
 
 type OpenLocation = "beside" | "newWindow";
 
@@ -138,39 +131,40 @@ export class PhysSimPanelManager {
 
   constructor(
     private ctx: vscode.ExtensionContext,
-    private server: PhysServer,
-    private stub: SimStubServer | null = null
+    private sim: Simulation
   ) {
-    // The stub outlives any individual panel, so subscribe once here and post
-    // into whichever panel happens to be open. State needed to repaint a panel
-    // opened later lives in the stub itself (getScreens / getLastFrame).
-    if (this.stub) {
-      // Restore the saved monitor layout before anything can connect; the stub
-      // re-declares it to Lua on the next debug session.
-      this.stub.setWantedScreens(this.getMonitorLayout());
-      this.stub.onScreenConfig = screens => {
-        // The window opens with the first monitor of a session rather than
-        // with the panel: on Windows with the real exe there is never one to
-        // show. Once open it asks for a replay, which covers this config.
-        if (!this.monitorPanel && this.shouldAutoOpenMonitorWindow()) {
-          void this.openMonitorWindow();
-          return;
-        }
-        this.screenTarget()?.webview.postMessage({ type: "screenConfig", screens });
-      };
-      this.stub.onFrame = commands => {
-        this.screenTarget()?.webview.postMessage({ type: "screenFrame", commands });
-      };
-      ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
-        if (!e.affectsConfiguration(MONITOR_WINDOW_SETTING)) return;
-        if (!monitorWindowEnabled()) {
-          this.closeMonitorWindow();
-          return;
-        }
-        this.monitorWindowDismissed = false;
-        if (this.shouldAutoOpenMonitorWindow()) void this.openMonitorWindow();
-      }));
-    }
+    // The simulation outlives any individual panel, so subscribe once here and
+    // post into whichever panel happens to be open. What a panel opened later
+    // needs to repaint lives in the simulation (getScreens / getFrames).
+    //
+    // Restore the saved monitor layout before anything runs; each run starts
+    // from it.
+    this.sim.setWantedScreens(this.getMonitorLayout());
+    this.sim.onScreenConfig = screens => {
+      // The window opens with the first monitor of a run rather than with the
+      // panel. Once open it asks for a replay, which covers this config.
+      if (!this.monitorPanel && this.shouldAutoOpenMonitorWindow()) {
+        void this.openMonitorWindow();
+        return;
+      }
+      this.screenTarget()?.webview.postMessage({ type: "screenConfig", screens });
+    };
+    this.sim.onFrames = frames => {
+      this.screenTarget()?.webview.postMessage({ type: "screenPixels", frames });
+    };
+    // The buttons and sliders sit below the monitors and go where they go.
+    this.sim.onControls = controls => {
+      this.screenTarget()?.webview.postMessage(this.controlsMessage(controls));
+    };
+    ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+      if (!e.affectsConfiguration(MONITOR_WINDOW_SETTING)) return;
+      if (!monitorWindowEnabled()) {
+        this.closeMonitorWindow();
+        return;
+      }
+      this.monitorWindowDismissed = false;
+      if (this.shouldAutoOpenMonitorWindow()) void this.openMonitorWindow();
+    }));
     // A log file that dies mid-session can't be recovered; tell the user and
     // put the webview's button back where it belongs.
     this.csv.onError = err => {
@@ -186,8 +180,8 @@ export class PhysSimPanelManager {
   }
 
   private shouldAutoOpenMonitorWindow(): boolean {
-    return !!this.stub && monitorWindowEnabled() && !this.monitorWindowDismissed
-      && this.stub.getScreens().some(s => s.poweredOn);
+    return monitorWindowEnabled() && !this.monitorWindowDismissed
+      && this.sim.getScreens().some(s => s.poweredOn);
   }
 
   /** A simulator session is starting: the monitor window may open again. */
@@ -201,10 +195,6 @@ export class PhysSimPanelManager {
    * physim.openMonitors command whatever the setting says.
    */
   async openMonitorWindow(): Promise<void> {
-    if (!this.stub) {
-      vscode.window.showInformationMessage(vscode.l10n.t("PhySim: the monitor view is not available on this platform."));
-      return;
-    }
     if (this.monitorPanel) {
       this.monitorPanel.reveal(undefined, true);
       return;
@@ -229,7 +219,10 @@ export class PhysSimPanelManager {
     });
     // The window owns the monitors now; empty the panel's section, which
     // hides it and gives the 3D view the room back.
-    if (this.panel) this.panel.webview.postMessage({ type: "screenConfig", screens: [] });
+    if (this.panel) {
+      this.panel.webview.postMessage({ type: "screenConfig", screens: [] });
+      this.panel.webview.postMessage({ type: "controlsConfig", controls: { buttons: [], sliders: [] } });
+    }
 
     const sub = created.webview.onDidReceiveMessage((msg: FromWebview) => {
       if (!msg || typeof (msg as { type?: unknown }).type !== "string") return;
@@ -275,32 +268,47 @@ export class PhysSimPanelManager {
       this.applyScreenMessage(msg);
       return true;
     }
+    if (msg.type === "controlButton") {
+      // Simulation checks the number; anything but a real boolean is a release.
+      this.sim.setButton(msg.number, msg.pressed === true);
+      return true;
+    }
+    if (msg.type === "controlSlider") {
+      this.sim.setSlider(msg.number, msg.value);
+      return true;
+    }
     if (msg.type === "touch") {
-      // Sent by mcScreen.js. Only ever fires while the stub is running:
-      // always on macOS, opt-in on Windows.
-      if (!this.stub) return true;
-      this.stub.sendTouch(
-        Number(msg.screen) || 0,
-        Number(msg.isTouched) === 1,
-        Number(msg.isTouchedAlt) === 1,
-        Number(msg.x) || 0,
-        Number(msg.y) || 0,
-        Number(msg.xAlt) || 0,
-        Number(msg.yAlt) || 0
-      );
+      const screen = Math.round(Number(msg.screen));
+      if (!Number.isFinite(screen)) return true;
+      this.sim.setTouch(screen, {
+        isTouched: Number(msg.isTouched) === 1,
+        isTouchedAlt: Number(msg.isTouchedAlt) === 1,
+        x: Number(msg.x) || 0,
+        y: Number(msg.y) || 0,
+        xAlt: Number(msg.xAlt) || 0,
+        yAlt: Number(msg.yAlt) || 0
+      });
       return true;
     }
     return false;
   }
 
-  /** Repaint monitors in a freshly opened panel from the stub's current state. */
+  /**
+   * The controls for a webview. An agent's run is only watched: its buttons
+   * and sliders are shown as they stand, and cannot be worked from here.
+   */
+  private controlsMessage(controls: ControlsInfo): { type: "controlsConfig"; controls: ControlsInfo; readOnly: boolean } {
+    return { type: "controlsConfig", controls, readOnly: this.sim.isShowingMirror() };
+  }
+
+  /** Repaint monitors in a freshly opened panel from the simulation's current state. */
   private replayScreens(panel: vscode.WebviewPanel): void {
-    if (!this.stub) return;
-    const screens = this.stub.getScreens();
+    panel.webview.postMessage(this.controlsMessage(this.sim.getControls()));
+    const screens = this.sim.getScreens();
     if (screens.length === 0) return;
     panel.webview.postMessage({ type: "screenConfig", screens });
-    const last = this.stub.getLastFrame();
-    if (last) panel.webview.postMessage({ type: "screenFrame", commands: last });
+    const frames = this.sim.getFrames();
+    if (frames.length > 0) panel.webview.postMessage({ type: "screenPixels", frames });
   }
 
   async openOrReveal(): Promise<void> {
@@ -344,9 +352,9 @@ export class PhysSimPanelManager {
     );
     this.panel = created;
     this.panelLocation = openLocation;
-    // The Lua tick rate follows the panel: slowed only while there is a
-    // panel showing (and marking) the speed.
-    this.server.setTimeScale(this.getTimeScale());
+    // The tick rate follows the panel: slowed only while there is a panel
+    // showing (and marking) the speed.
+    this.sim.setTimeScale(this.getTimeScale());
     created.webview.html = this.buildPanelHtml(created.webview);
 
     if (openLocation === "newWindow") {
@@ -362,18 +370,14 @@ export class PhysSimPanelManager {
       created.webview.onDidReceiveMessage(async (msg: FromWebview) => {
         if (!msg || typeof (msg as { type?: unknown }).type !== "string") return;
         if (msg.type === "state") {
-          const state: PhysState = {
-            position: msg.position,
-            rotation: msg.rotation,
-            velocity: msg.velocity,
-            angularVelocity: msg.angularVelocity
-          };
-          this.server.broadcast(state);
+          // A webview message is untrusted: a NaN here would reach the script's inputs.
+          const state = sanitizePhysState(msg);
+          if (state) this.sim.setPhysState(state);
           return;
         }
         if (msg.type === "timeScale") {
           const scale = sanitizeTimeScale(msg.scale);
-          this.server.setTimeScale(scale);
+          this.sim.setTimeScale(scale);
           await this.ctx.workspaceState.update(TIME_SCALE_KEY, scale);
           return;
         }
@@ -396,7 +400,7 @@ export class PhysSimPanelManager {
         }
         if (msg.type === "presetSave") {
           const name = typeof msg.name === "string" ? msg.name.trim().slice(0, MAX_PRESET_NAME_LEN) : "";
-          const state = sanitizePresetState(msg.state);
+          const state = sanitizePhysState(msg.state);
           if (!name || !state) return;
           const presets = this.getPresets();
           presets[name] = state;
@@ -434,16 +438,27 @@ export class PhysSimPanelManager {
       // than leaving a half-written one behind. After the clear above, so the
       // csvState it posts can't land on a disposed webview.
       this.stopCsvLog(false);
-      // zero out the state on disconnect so the Lua side doesn't keep stale values
-      this.server.broadcast(ZERO_STATE);
-      // Nothing left to show the speed, so don't leave Lua running slow.
-      this.server.setTimeScale(1);
+      // zero out the state so a running script doesn't keep stale values
+      this.sim.setPhysState(ZERO_STATE);
+      // Nothing left to show the speed, so don't leave the script running slow.
+      this.sim.setTimeScale(1);
     });
   }
 
   reset(): void {
     if (this.panel) this.panel.webview.postMessage({ type: "reset" });
   }
+
+  /**
+   * Show the pose of an AI agent's run on the gizmo. The webview reports the
+   * pose back as its own state, as it does for a loaded preset — harmless: it
+   * reaches only this window's Simulation, never the agent's run.
+   */
+  showAgentPose(state: PhysState): void {
+    if (this.panel) this.panel.webview.postMessage({ type: "mirrorPose", state });
+  }
+
+  isOpen(): boolean { return this.panel !== null; }
 
   close(): void {
     this.closeMonitorWindow();
@@ -548,26 +563,21 @@ export class PhysSimPanelManager {
     }
   }
 
-  /**
-   * Add, resize or drop one monitor. Only ever reaches Lua when PhySim is the
-   * one drawing the monitors — on Windows with the real exe the stub is never
-   * started, and configureScreen then does nothing but remember the layout.
-   */
+  /** Add, resize or drop one monitor, and remember the layout for the next run. */
   private applyScreenMessage(msg: ScreenSetMsg | ScreenRemoveMsg): void {
-    if (!this.stub) return;
     if (msg.type === "screenRemove") {
       const n = Math.round(Number(msg.screen));
       if (!Number.isFinite(n)) return;
-      this.stub.removeScreen(n);
+      this.sim.removeScreen(n);
     } else {
       const req = sanitizeScreenRequest({ ...msg, number: msg.screen });
       if (!req) {
         log(`Ignored a screen config for screen ${msg.screen} (size "${msg.size}").`);
         return;
       }
-      this.stub.configureScreen(req);
+      this.sim.configureScreen(req);
     }
-    this.setMonitorLayout(this.stub.getWantedScreens());
+    this.setMonitorLayout(this.sim.getWantedScreens());
   }
 
   private getMonitorLayout(): ScreenRequest[] {

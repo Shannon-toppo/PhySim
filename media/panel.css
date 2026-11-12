@@ -15,7 +15,9 @@ body {
   /* The monitor row is content-sized until the splitter is dragged, which sets
      --monitors-h to a pixel height (panel.js). The splitter's own row is auto,
      so it collapses to nothing together with the handle. */
-  grid-template-rows: 36px 1fr auto var(--monitors-h, auto);
+  /* The toolbar's row is as tall as the toolbar: one line normally, more when
+     a narrow panel makes it wrap. */
+  grid-template-rows: minmax(36px, auto) 1fr auto var(--monitors-h, auto);
   grid-template-areas:
     "toolbar toolbar"
     "viewport sidebar"
@@ -29,10 +31,24 @@ body {
   grid-area: toolbar;
   display: flex;
   align-items: center;
+  /* A panel narrower than the buttons puts them on a second line. Without
+     this they were squeezed instead: every label broke after its icon, and the
+     hint spilled out below the bar. */
+  flex-wrap: wrap;
   gap: 4px;
   padding: 4px 8px;
   border-bottom: 1px solid var(--vscode-panel-border, #444);
   background: var(--vscode-editor-background);
+  /* So the hint can be dropped by the toolbar's own width (see .hint). */
+  container-type: inline-size;
+  min-width: 0;
+}
+
+/* Nothing in the bar may shrink or break in two: a label is its icon and its
+   word on one line. The hint is the one item that gives way. */
+#toolbar > * {
+  flex: none;
+  white-space: nowrap;
 }
 
 #toolbar button {
@@ -43,6 +59,9 @@ body {
   cursor: pointer;
   font-size: 12px;
   border-radius: 2px;
+  /* The labels are "icon word": a plain space after a symbol glyph reads as
+     no gap at all, so the space is widened a little. */
+  word-spacing: 0.2em;
 }
 
 #toolbar button:hover {
@@ -115,10 +134,70 @@ body {
   font-weight: normal;
 }
 
+/* The hint takes whatever is left of the line and is cut short with an
+   ellipsis; its title holds the full text. Where the bar is too narrow for it
+   to say anything useful it is not shown at all. */
 #toolbar .hint {
+  flex: 1 1 0;
+  min-width: 0;
   margin-left: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   opacity: 0.7;
   font-size: 11px;
+}
+
+/* Too narrow for the hint: a "?" takes its place, so the text can still be
+   reached. Hovering it, or focusing it (a click or Tab does), shows the hint
+   in a bubble below the bar. */
+#toolbar .hint-help {
+  display: none;
+  position: relative;
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--vscode-input-border, #666);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  opacity: 0.8;
+  cursor: help;
+  user-select: none;
+}
+
+#toolbar .hint-help:hover,
+#toolbar .hint-help:focus { opacity: 1; }
+
+#toolbar .hint-help:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+
+.hint-bubble {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  /* Above the 3D view and the sidebar, which follow the bar in the grid. */
+  z-index: 20;
+  width: max-content;
+  max-width: min(260px, 80vw);
+  padding: 6px 8px;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.4;
+  font-size: 12px;
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground, #ccc));
+  background: var(--vscode-editorHoverWidget-background, #252526);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+  border-radius: 3px;
+  cursor: default;
+}
+
+.hint-help:hover .hint-bubble,
+.hint-help:focus .hint-bubble { display: block; }
+
+@container (max-width: 760px) {
+  #toolbar .hint { display: none; }
+  #toolbar .hint-help { display: block; }
 }
 
 #viewport {
@@ -157,7 +236,7 @@ body.no-monitors #monitors-resizer { display: none; }
    inline value beats any stylesheet rule. A height dragged earlier is kept in
    the variable and comes back with the next screen config. */
 body.no-monitors {
-  grid-template-rows: 36px 1fr auto auto;
+  grid-template-rows: minmax(36px, auto) 1fr auto auto;
 }
 
 /* Keep the row-resize cursor (and kill text selection) for the whole drag,
@@ -167,8 +246,8 @@ body.resizing-monitors {
   user-select: none;
 }
 
-/* Monitor stand-in for LifeBoatAPI's Windows-only simulator exe (macOS).
-   The row collapses to nothing while hidden, so Windows layout is unchanged. */
+/* The microcontroller's monitors. The row collapses to nothing while hidden
+   (no run yet, or the monitors are in their own window). */
 #monitors {
   grid-area: monitors;
   display: flex;
@@ -209,8 +288,7 @@ body.monitors-sized #monitors { max-height: none; }
   gap: 12px;
 }
 
-.monitor-zoom,
-.monitor-check {
+.monitor-zoom {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -218,16 +296,6 @@ body.monitors-sized #monitors { max-height: none; }
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
-}
-
-.monitor-check {
-  cursor: pointer;
-  user-select: none;
-}
-
-.monitor-check input {
-  margin: 0;
-  accent-color: var(--vscode-focusBorder, #007fd4);
 }
 
 .monitor-zoom select {
@@ -353,6 +421,9 @@ body.monitors-sized #monitors { max-height: none; }
   cursor: default;
 }
 
+/* The black background is part of the picture: an engine frame is straight
+   RGBA with real alpha, and the monitor shows rgb × alpha. Compositing the
+   canvas over black is that multiplication (see media/mcScreen.js). */
 .monitor-canvas {
   display: block;
   background: #000;
@@ -368,6 +439,97 @@ body.monitors-sized #monitors { max-height: none; }
 body.monitor-window {
   display: flex;
   flex-direction: column;
+}
+
+/* --- Simulator buttons and sliders, below the monitors (controls.js) ------ */
+
+#controls {
+  flex: none;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--vscode-panel-border, #444);
+}
+
+#controls.hidden { display: none; }
+
+/* An AI agent's run, mirrored: the controls are shown as they stand there. */
+#controls.read-only .monitors-head span::after { content: " \2014  AI agent (view only)"; text-transform: none; letter-spacing: 0; }
+#controls.read-only .control-button,
+#controls.read-only .control-slider input { cursor: default; }
+#controls.read-only .control-button:hover:not(.down) { background: var(--vscode-button-secondaryBackground, #3a3d41); }
+/* Disabled, but not dimmed: the state is the point. */
+#controls.read-only .control-button:disabled,
+#controls.read-only .control-slider input:disabled { opacity: 1; }
+
+#controls-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#controls-buttons:empty,
+#controls-sliders:empty { display: none; }
+
+.control-button {
+  min-width: 34px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #ccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  cursor: pointer;
+  /* A press is a hold, not a click: don't let a drag start a text selection. */
+  user-select: none;
+  touch-action: none;
+}
+
+.control-button:hover { background: var(--vscode-button-secondaryHoverBackground, #45494e); }
+
+.control-button:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+
+/* Held: getIsClicked is true. */
+.control-button.down {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+}
+
+/* The toggle is on: getIsToggled is true. An outline, so it reads apart from "held". */
+.control-button.toggled {
+  border-color: var(--vscode-focusBorder, #007fd4);
+  box-shadow: inset 0 -3px 0 var(--vscode-focusBorder, #007fd4);
+}
+
+#controls-sliders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 4px 16px;
+  margin-top: 6px;
+}
+
+#controls-buttons:empty + #controls-sliders { margin-top: 0; }
+
+.control-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.control-slider span { flex: none; min-width: 56px; opacity: 0.85; }
+
+.control-slider input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.control-slider output {
+  flex: none;
+  width: 34px;
+  text-align: right;
+  font-family: var(--vscode-editor-font-family, monospace);
 }
 
 body.monitor-window #monitors {

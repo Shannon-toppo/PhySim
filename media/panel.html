@@ -36,7 +36,10 @@
     <button id="csv-log" title="Stream CH1-17 to a CSV file for offline analysis">&#11015; CSV Log</button>
     <span id="csv-count" class="rec-count"></span>
     <button id="sidebar-toggle" class="active" title="Hide the sliders &amp; number inputs to give the viewport and the monitors the full panel width (H)">&#9707; Values</button>
-    <span class="hint">Drag the gizmo. Left-drag = orbit, right/wheel-drag = pan, scroll = zoom.</span>
+    <span class="hint" title="Drag the gizmo. Left-drag = orbit, right/wheel-drag = pan, scroll = zoom.">Drag the gizmo. Left-drag = orbit, right/wheel-drag = pan, scroll = zoom.</span>
+    <!-- Stands in for the hint where the bar is too narrow to show it (see
+         .hint-help in panel.css): hover, focus or click shows the same text. -->
+    <span class="hint-help" tabindex="0" role="button" aria-label="How to move the view">?<span class="hint-bubble" role="tooltip">Drag the gizmo. Left-drag = orbit, right/wheel-drag = pan, scroll = zoom.</span></span>
   </div>
 
   <div id="viewport"></div>
@@ -52,10 +55,6 @@
       <span>Monitors</span>
       <div class="monitor-opts">
         <button type="button" id="monitor-add" title="Declare another monitor for the microcontroller. The simulator runs onDraw once per screen, so screen.getWidth() tells them apart.">&#43; Monitor</button>
-        <label class="monitor-check" title="Undo the gamma correction LifeBoatAPI applies in Lua and draw the raw screen.setColor values. Off = the washed-out colours the game and the Windows simulator show.">
-          <input type="checkbox" id="monitor-truecolour" />
-          <span>True colour</span>
-        </label>
         <label class="monitor-zoom">
           <span>Zoom</span>
           <select id="monitor-zoom" title="Monitor scale. Fit = largest integer factor that fits the panel width. Pinch the trackpad (or Ctrl/Cmd + wheel) over a monitor to zoom.">
@@ -68,6 +67,13 @@
       </div>
     </div>
     <div id="monitors-list"></div>
+    <!-- LifeBoatAPI's simulator buttons and sliders (media/controls.js). Hidden
+         until the running script reads one. -->
+    <div id="controls" class="hidden">
+      <div class="monitors-head"><span>Controls</span></div>
+      <div id="controls-buttons"></div>
+      <div id="controls-sliders"></div>
+    </div>
   </div>
 
   <div id="sidebar">

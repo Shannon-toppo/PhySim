@@ -1,7 +1,7 @@
 // media/csv.js — the CSV log's column definition and row formatting. The
 // point of these tests is that the header and the rows can never drift apart
 // (a shifted column silently mislabels every plot made from the file), that
-// the CH1-12 text matches the wire encoder byte-for-byte, and that no value
+// the CH1-12 text is pinned (explicit strings), and that no value
 // can inject a separator into a record.
 
 import { test } from "node:test";
@@ -10,7 +10,6 @@ import {
   CSV_COLUMNS, CSV_HEADER, fmtCsv, csvRow, createLog, tickRow, sendRow
 } from "../media/csv.js";
 import { deriveChannels } from "../media/channels.js";
-import { fmt } from "../out/physServer.js";
 
 /** @param {Partial<Record<string, number[]>>} o */
 function state(o = {}) {
@@ -46,18 +45,24 @@ test("a row has exactly as many fields as the header", () => {
   assert.equal(row.split(",").length, CSV_HEADER.split(",").length);
 });
 
-test("CH1-12 are formatted exactly like the wire encoder", () => {
+test("CH1-12 text is pinned: six decimals, trailing zeros dropped, non-finite as 0", () => {
+  // There is no wire format any more (the pose reaches Lua through a host
+  // callback). These strings are what the old TCP encoder's fmt() produced,
+  // `Number(n.toFixed(6)).toString()` with non-finite -> "0", and logs written
+  // by earlier versions have them, so the CSV keeps them byte-for-byte.
   const s = state({
     position: [1.23456789, -0.0000004, 1e7],
     rotation: [-3.14159265, 0.5, 0],
-    velocity: [0.1234567, -2, 0],
-    angularVelocity: [0.0001235, -0.05, 3]
+    velocity: [0.1234567, -2, NaN],
+    angularVelocity: [0.0001235, -0.05, Infinity]
   });
   const f = csvRow(0, 0, 0, 1, s).split(",");
-  const wire = [
-    ...s.position, ...s.rotation, ...s.velocity, ...s.angularVelocity
-  ].map(fmt);
-  assert.deepEqual(f.slice(CH1, CH1 + 12), wire);
+  assert.deepEqual(f.slice(CH1, CH1 + 12), [
+    "1.234568", "0", "10000000",
+    "-3.141593", "0.5", "0",
+    "0.123457", "-2", "0",
+    "0.000123", "-0.05", "0"
+  ]);
 });
 
 test("CH13-17 come from deriveChannels", () => {

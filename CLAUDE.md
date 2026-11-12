@@ -4,70 +4,81 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A VSCode extension that simulates Stormworks' in-game *physics sensor* block from a 3D gizmo, and feeds the values into `Stormworks Lua with LifeBoatAPI` (`NameousChangey.lifeboatapi`) microcontroller debug sessions. It runs alongside LifeBoatAPI's existing simulator (which already binds `127.0.0.1:14238`), so PhySim uses port **14239**.
+A VSCode extension that runs Stormworks microcontroller Lua itself and feeds it the values of an in-game *physics sensor* block, driven from a 3D gizmo. The Lua runs on the npm package `@stormcat-works/storm-lua-engine` (Storm Lua Engine, pinned at 0.4.1; WebAssembly, MIT) in a worker thread of the extension host. Every run is a VSCode debug session of type `physim`. The engine also rasterises the microcontroller's monitors and does the build (`buildLifeboat`: link `require`s, strip simulator-only sections, minify).
 
-See `doc/worklog.md` for the iteration history — the sandbox-limitation discoveries there are still load-bearing context for any Lua-side change. `doc/macos-support.md` records why the extension cannot run on macOS (upstream LifeBoatAPI is Windows-only) — read it before attempting any cross-platform work.
+Up to 1.2.1 PhySim depended on `Stormworks Lua with LifeBoatAPI` (`NameousChangey.lifeboatapi`): it patched LifeBoatAPI's `_build/_simulator.lua`, streamed the pose over TCP 14239, stood in for `STORMWORKS_Simulator.exe` on TCP 14238, and shipped luasocket for macOS. All of that is gone in 2.0.0 — no `extensionDependencies`, no ports, no tokens, no luasocket. What remains of LifeBoatAPI is a compatibility surface for scripts written against it (see "LifeBoatAPI compatibility"). `doc/worklog.md` and `doc/macos-support.md` record the 1.x design; read them as history, not as a description of the code.
 
 ## Commands
 
 ```bash
 npm install                # also runs scripts/copy-three.js (postinstall) — copies three.js & controls into media/three/
-npm run compile            # tsc -p ./  →  out/
+npm run compile            # tsc -p ./  →  out/  (module Node16: the engine is ESM-only, loaded with a real import())
 npm run watch              # tsc --watch
 npm run lint               # eslint . (flat config, correctness rules only — no formatter)
 npm run check:media        # tsc -p tsconfig.media.json — strict checkJs over media/*.js (JSDoc types)
 npm test                   # compile + node --test test/**/*.test.mjs
-npm run check:package      # vsce ls piped into scripts/check-package.mjs — the .vsix has every runtime file and no dev-only directory
+npm run check:package      # vsce ls piped into scripts/check-package.mjs — the .vsix has every runtime file (out/, media/, lua/, the engine's dist/) and no dev-only directory
 npx vsce package           # build physim-x.y.z.vsix for distribution
-scripts/build-luasocket-macos.sh  # rebuilds the committed universal (arm64+x86_64) luasocket/darwin/*.so — only needed when changing luasocket/Lua versions
-node tools/docfigs/monitor-guide.mjs  # regenerates doc/img/monitor-guide/*.svg (the figures of doc/monitor-guide.md) from raster.js / pixelFont.js
 ```
 
-Debugging the extension itself: open the folder in VSCode and press **F5**. `.vscode/launch.json` is already wired (Extension Development Host, preLaunchTask = `npm: watch`). It is `watch` rather than `compile` on purpose: a one-shot build only runs on F5, so a Reload Window in the dev host would leave the host on a stale `out/` while `media/` — read from disk on every load — moves on.
+Node: the engine package declares `node >= 22.18`; npm test hands its glob to `node --test` (Node 21+); ESLint 10 needs 20.19+. CI uses Node 24.
+
+Debugging the extension itself: open the folder in VSCode and press **F5**. `.vscode/launch.json` is already wired (Extension Development Host, preLaunchTask = `npm: watch`). It is `watch` rather than `compile` on purpose: a one-shot build only runs on F5, so a Reload Window in the dev host would leave the host on a stale `out/` while `media/` — read from disk on every load — moves on. In the dev host, open a folder with a microcontroller `.lua` and press F6.
 
 ### Tests
 
-`test/` uses Node's built-in `node:test` runner (no framework dependency):
+`test/` uses Node's built-in `node:test` runner (no framework dependency). Most suites run the real engine (WASM) from `out/`, so `npm test` compiles first; the worker-based suites start real `worker_threads`.
 
-- `protocol.test.mjs` — `physServer.encode()` wire format (4-digit prefix, field order, `fmt` rounding).
-- `channels.test.mjs` — known-value + golden-regression tests for `media/channels.js` (CH13–17 math).
-- `roundtrip.test.mjs` — Node `encode()` bytes fed through `PhySim.lua`'s real `update()` parser and read back (frame splits, concatenation, corrupt-prefix resync), plus `RATE` landing in `simulator._timePerFrame` and a closed socket restoring 60 Hz.
-- `parity.test.mjs` — **the CH13–17 desync guard**: runs `media/channels.js` and `PhySim.lua:injectAsInputs` over the same vectors and asserts agreement to 1e-9. Extend its vector table whenever the derived-channel math changes.
-- Lua runs inside **fengari** (Lua 5.3 semantics in pure JS — same major version as lua-debug) via `test/helpers/luaRunner.mjs`, which stubs `_physim_socket` and drives `PhySim._buf` directly. No system Lua install needed.
-- `debugConfigPatcher.test.mjs` — `src/debugConfigPatcher.ts` with a stub served for `"vscode"` (hooked in via `Module._load` before the compiled file loads) and `process.platform`/`arch` swapped per call: cpath prepended and not duplicated, native `luaArch`, `config.arg` dedup, stub start/stop per `useBuiltInMonitors()`, and the warn-don't-throw paths.
-- `pathUtils.test.mjs` — `src/pathUtils.ts`'s `normalize()`: forward-slashed, case-folded, trailing separators and dot segments resolved. `path.resolve` is platform-specific, so inputs are built from the host platform and the drive-letter/backslash cases only run on win32.
-- `simulatorLuaPatch.test.mjs` — the `_simulator.lua` surgery: injection order (FS shim before `createSandbox`, socket after), the exe-launch suppression, idempotence, and the "upstream changed the template" cases that must warn instead of guessing.
-- `trail.test.mjs` — `media/trail.js`: the trail buffer keeps the newest points in draw order, drops sub-millimetre samples, survives a capacity change, and the velocity-arrow length stays inside the scene for any speed.
-- `blend.test.mjs` — `media/blend.js`: packed words really are R,G,B,A in memory order (get this backwards and every monitor colour comes out with red and blue swapped), and blending reproduces the game's measured values (alpha blended too, shown as rgb × alpha).
-- `ingame.test.mjs` — **the monitor against the real game**: runs each page of `tools/ingame/verify*.lua` (fengari, `test/helpers/cardRunner.mjs`) through `raster.js` + `pixelFont.js` and compares with `test/fixtures/ingame-raster.json`, lit pixels from Stormworks screenshots. See "Monitor rasterising" below.
-- `ties.test.mjs` — card G (`tools/ingame/verifyG_ties.lua`, the 1/512px tie probes) against its reader `tools/ingame/analysis/ties.mjs`: the card rendered with its tie nudged up and then down must decode to all-up and all-down, and exactly on the tie to what `snapUnits()` predicts, on six monitor sizes, so the probe layout in the Lua and in the reader can't drift apart.
-- `raster.test.mjs` — `media/raster.js`: one test per rasterising rule (each tagged with the page that shows it), plus the clipping/guard cases (off-screen endpoints, absurd radii) that keep the loops bounded.
-- `pixelFont.test.mjs` — `media/pixelFont.js`: glyph table shape and coverage, metrics, exact pixel patterns for glyphs read off the game, lowercase/tofu fallbacks, floored fractional coordinates, and `wrapTextBox` / `layoutTextBox` against page B7.
+- `engineRunner.test.mjs` — `src/engine/runner.ts` on the real engine: tick order (touch defaults → `onLBSimulatorTick` → `onTick` → `onDraw` per powered monitor), sticky channel overrides, `require` (dotted names, `init.lua`, include-once, shared globals, missing module), Lua errors naming file and line, `print`/`debug.log` with call site, default 3x3 / `setScreen` / one frame per powered monitor / repeats skipped, blank frame without `onDraw`, `setProperty` / `getTouchScreen(n)` / host pose / `simulator:exit()`, bad `setScreen` size and out-of-range `setInputNumber` as Lua errors, a breakpoint mid-tick resuming the same tick exactly once, step-over staying suspended until the phase ends.
+- `engineSession.test.mjs` — `src/engine/session.ts` with a real worker: ~60 Hz ticking, slow motion proportionally slower, logs/frames/layout events, Lua error and `exit()` endings, breakpoint stop/inspect/step/continue over the request channel, panel inputs reaching the script, `replay`, a missing entry file being an error rather than a hang.
+- `simulation.test.mjs` — `src/simulation.ts`: panel state set before a run is what the first tick sees; defaults (origin, ×1, one 3x3); live pose/speed changes; `setTimeScale` sanitising; `start()` replacing a run (also one suspended at a breakpoint) without the old run's events leaking; `stop()` blanking and reporting `stopped`; errors keeping the last pictures and layout; `exit()`; the wanted layout (configure/remove, restore, sorted, not applied to a live run); script `setScreen` landing on top; a pose/speed/monitor sent right after `start()` not lost while the engine loads.
+- `debugSession.test.mjs` — `src/debugSession.ts` driven as VSCode drives it, against a real run: `formatValue` reads like Lua; breakpoint → stack → scopes → variables → table expansion → evaluate → step → continue; a breakpoint added while running binds; `noDebug` ignores breakpoints; `pause` is refused and inspection while running fails cleanly; a Lua error goes to stderr and terminates; launch without `program` fails; disconnect stops the script.
+- `build.test.mjs` — `src/build.ts` through a real build worker: `requiredNames` (call forms, quotes), `collectProject` (transitive, unresolved names skipped), minified and non-minified builds that link, strip `__LB_SIMULATOR_ONLY__` and unused `---@section`, and still run in the game environment; a really-required missing module, a syntax error and a missing entry file fail with a message; an output over 8192 characters builds with a warning.
+- `runTarget.test.mjs` — `src/runTarget.ts`: the `require` root order (workspace folder or the script's directory, then `physim.libraryPaths`, then bundled `lua/`, then the legacy LifeBoatAPI setting — a 1.x `PhySim.lua` listed there must not hide the bundled one — then `_build/libs`), relative paths, blank/non-string entries, de-duplication, shadowing, no mutation of input.
+- `sourceRoots.test.mjs` — `src/engine/sourceRoots.ts`: `a.b` → `a/b.lua` / `a/b/init.lua` / `a/b.luah` and their precedence, earlier root wins, names that could escape the roots refused without touching the file system, `chunkName`/`chunkFile` round trip (backslashes, drive-letter case).
+- `screens.test.mjs` — `src/engine/screens.ts`: the host accepts every size the panel offers (against `media/monitorConfig.js`), request sanitising, 32 px blocks and the portrait swap, LifeBoatAPI's `setScreen` numbering rule, `MAX_SCREENS`, per-monitor touch (dropped on power-off), `onChange` firing only on real changes.
+- `roundtrip.test.mjs` — `lua/PhySim.lua` on the real engine through `VehicleRunner`: all 17 channels on `input.getNumber` at startCh 1 and another startCh, a new pose picked up on the next `update()`, rotation normalised to [-π, π) (exactly +π → -π) in agreement with `normalizeAngle`, getters, zero before the first update, `tickRate()` following the runner, `PhySim:new(host, port)` / `close()` compatibility. Channels come back as float32 (composite inputs are stored that way).
+- `parity.test.mjs` — **the CH13–17 desync guard**: runs `media/channels.js` and `PhySim.lua:injectAsInputs` over the same vectors and asserts agreement to 1e-9. Extend its vector table whenever the derived-channel math changes. Lua runs in **fengari** (pure-JS Lua 5.3, f64 — a devDependency, never shipped) via `test/helpers/luaRunner.mjs`, which stubs `__physim_host.phys()` / `tickRate()` and captures `injectAsInputs`' writes with a fake `simulator`.
+- `ingame.test.mjs` — **the monitor against the real game**: runs each page of `tools/ingame/verify*.lua` on the engine at the page's monitor size (`test/helpers/engineCard.mjs`) and demands an exact match with `test/fixtures/ingame-raster.json` (lit pixels of 86 Stormworks screenshot pages). Also checks each card is ASCII only. See "Monitor rasterising".
+- `ties.test.mjs` — card G (`tools/ingame/verifyG_ties.lua`, the 1/512px tie probes) against its reader `tools/ingame/analysis/ties.mjs`: rendered on the engine with the tie nudged up and then down it must decode all-up and all-down, and exactly on the tie to what `snapUnits()` predicts, on six monitor sizes; plus probe layout sanity.
+- `phaseCard.test.mjs` — card H (`tools/ingame/verifyH_phase.lua`), which asks the real game what `input.*`/`output.*` do inside `onDraw` and `screen.*` inside `onTick`. It is not a pixel card: the test checks the card itself works (paging on the bottom half, FIRE on the top, the one-frame `FIRING` announcement, every page reaching `OK`, text fitting a 3x3) and **pins what the engine answers on each page**, the thing the in-game answers are to be compared with.
 - `monitorConfig.test.mjs` — `media/monitorConfig.js`: the size table round-trips through pixels in both orientations, `nextScreenNumber` reuses a removed slot, and `fitScale` picks one factor for all monitors (and never 0).
-- `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 formatted byte-for-byte like `physServer.fmt()`, the tick/send de-duplication, and `game_time_s` counting ticks rather than wall clock.
-- `timeScale.test.mjs` — `media/timeScale.js` and the host's copy of the speed list agree, and anything else sanitises to ×1.
+- `channels.test.mjs` — known-value + golden-regression tests for `media/channels.js` (CH13–17 math, angle wrap, gimbal-pole clamping).
+- `csv.test.mjs` — `media/csv.js`: header/row width agreement, a golden row, CH1–12 text pinned to the 1.x encoder's format (six decimals, non-finite → 0) so old and new logs match, the tick/send de-duplication, and `game_time_s` counting ticks rather than wall clock.
 - `csvLogger.test.mjs` — `src/csvLogger.ts`: CRLF records, rows arriving with no log open, a row smuggling its own newline, truncate-on-start, and an end-to-end pass where webview-shaped batches parse back as one table.
+- `timeScale.test.mjs` — `media/timeScale.js` and the host's copy of the speed list (`src/engine/physState.ts`) agree, and anything else sanitises to ×1.
+- `trail.test.mjs` — `media/trail.js`: the trail buffer keeps the newest points in draw order, drops sub-millimetre samples, survives a capacity change, and the velocity-arrow length stays inside the scene for any speed.
+- `agentSession.test.mjs` — `src/agent/agentSession.ts` on the real engine: start runs the top level only; step counts ticks and is repeatable (same calls, same pixels); hold vs integrate; the pose surviving a restart while held inputs and monitors do not; a Lua error at the top level / in a tick / an endless loop as a `failed` run (not a thrown request) that keeps the last pictures and outputs; `simulator:exit()`; the step time limit; scenario playback; monitors, touch, the picture before a step, snapshots across a restart, the log cursor and its cap.
+- `mcpServer.test.mjs` — the AI tools end to end. `src/agent/mcp.ts` line by line (version negotiation, JSON-RPC error codes, notifications, batches), then `out/agent/server.js` as a child process driven by **the official MCP client** (`@modelcontextprotocol/sdk`, a devDependency that is never shipped — the protocol layer is hand-written, and this is what shows a real client accepts it): the tool list, the loop an agent runs, snapshots across an edit, a Lua error, scenario playback, the PNG, the build (writes only when asked, only inside the workspace), ~30 malformed-argument cases that must change nothing, and a garbage line on stdin.
+- `pixels.test.mjs` / `png.test.mjs` / `scenario.test.mjs` / `project.test.mjs` — the pure halves of the AI tools: region/diff/expectation/grid queries on hand-built pictures; the PNG decoded chunk by chunk in the test; a CSV log written by `media/csv.js` read back as poses; JSONC settings, the workspace-folder walk and the `require` root order without VSCode.
+- `mirrorLink.test.mjs` / `mirror.test.mjs` — the panel mirror. The protocol half: endpoint naming (independent of the environment, within a socket path's length, Windows' pointer file and random pipe name), an update byte for byte across the wire, ~30 malformed updates refused. The socket half, with a real `AgentSession` and real local sockets: the window found from the script by walking up, only changed pictures resent, a window opened later found after the retry interval, stop / failure / the agent going away, a second agent replacing the first, **a connection that does not greet displacing nobody** (another window's liveness probe), two windows on one folder, a stale socket taken over, owner-only modes, and the pointer-file lookup (run off Windows with a Unix socket standing in for the pipe).
+- `controls.test.mjs` — `src/engine/controls.ts` alone (hold vs click, the one-tick latch, a press flipping the toggle, slider clamping, out-of-range numbers reading as nothing, what `info()` lists and when `onChange` fires), then through `VehicleRunner` with LifeBoatAPI's template script.
+- `motion.test.mjs` — **the integrator desync guard**: `src/agent/motion.ts` and `media/integrator.js` (plus both `normalizeAngle`s) over the same vectors, exact equality. Extend it whenever the integration changes.
 - `l10n.test.mjs` — every `%key%` in `package.json` exists in both `package.nls*.json`, every `vscode.l10n.t()` string has an entry in `l10n/bundle.l10n.ja.json` (and no entry is orphaned), and a translation keeps its `{n}` arguments.
 - `webviewHtml.test.mjs` — loads `dom.js` / `monitorDom.js` against a recording `document` and checks `panel.html` / `monitors.html` have every id they look up, plus the `{{placeholder}}` set of each page against `src/template.ts`.
-- `simstub.test.mjs` — the shared `frame.ts` framing (prefix encode/decode, split/concat/corrupt-prefix resync) plus `simStubServer.ts`'s protocol handling: `SCREENCONFIG` → `SCREENSIZE`, portrait swap, `TICKEND` buffering/flush, draw-command parsing, and `sendTouch()`'s wire shape. Also the 14238 token gate: a connection without this session's token (wrong, stale, silent, or an HTTP request) is closed without evicting the Lua client, and the next run's token takes over.
-- `sessionAuth.test.mjs` — `SessionAuth.verify()` and the 14239 side of the gate: `PhysServer` sends nothing before the token, an unauthenticated connection evicts nobody, a silent one times out.
 
-## Architecture — three boundaries, three runtimes
+Helpers: `test/helpers/engineCard.mjs` (one card page = one tick with `input.getNumber(32)` set to the page, then one `onDraw` at the monitor size; returns the engine's frame), `test/helpers/luaRunner.mjs` (fengari, for `parity.test.mjs`).
 
-Data flows through three independent runtimes that the design has to keep in sync:
+Not covered by any test: anything that needs a real VSCode window — the webview painting frames, the debug UI, the F6/F7 keybindings, the editor-title buttons, the `.vsix` installed on Windows/Linux. See "Open items".
+
+## Architecture — three runtimes
 
 ```
-WebView (browser JS, Three.js)
-       │  postMessage  {type:"state", position, rotation, velocity, angularVelocity}
-       ▼
-Extension host (Node, TypeScript)  ──  TCP 14239 (length-prefixed text)  ──  Lua-debug process (Lua 5.3)
-                                                                              │
-                                                                              ▼
-                                                                          LifeBoatAPI sandbox
-                                                                          (user microcontroller code)
+WebView (browser JS, Three.js)               media/
+   │  postMessage: state (pose), timeScale, touch, screenSet/screenRemove, csv*, presets
+   │  ◄── screenConfig {screens}, screenPixels {frames: RGBA per monitor}, csvState, …
+   ▼
+Extension host (Node, TypeScript)            src/
+   extension.ts ── debug adapter (inline, DAP) ── Simulation ── EngineSession
+   │  worker_threads postMessage (structured clone: bigint / Uint8Array survive)
+   ▼
+Engine worker (Node worker thread)           src/engine/worker.ts
+   VehicleRunner ── Storm Lua Engine VM (extended environment) ── user script + prelude + PhySim.lua
 ```
 
-A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) — stands in for LifeBoatAPI's Windows-only `STORMWORKS_Simulator.exe`, which the sandboxed Lua otherwise connects to directly. It runs whenever `useBuiltInMonitors()` (in `debugConfigPatcher.ts`) is true: always on macOS, and on Windows only with the experimental `physim.monitors.useBuiltInOnWindows` setting. It answers the same `SimulatorConnection.lua` protocol and forwards parsed screen config/draw commands to the WebView, where `media/mcScreen.js` renders the microcontroller's monitors on `<canvas>`. `src/frame.ts` holds the `%04d`-length-prefixed framing shared by both TCP servers.
+The pose goes webview → host (`sanitizePhysState`) → `Simulation.setPhysState` → worker → `VehicleRunner`, and the script pulls it synchronously through the host binding `__physim_host.phys()` (called by `PhySim:update()`). Frames go the other way: the runner copies each powered monitor's frame after `onDraw`, sends only the changed ones, and the panel uploads them with `putImageData`. Nothing crosses a socket; nothing leaves the extension host process.
+
+A build is a separate, short-lived worker (`buildWorker.ts`): minifying can take seconds and must not hold up the host, and a thrown-away worker leaves no compiler state.
 
 1. **`media/`** — the WebView, split into ES modules loaded via relative imports from the entry `panel.js` (the CSP nonce on the entry `<script type="module">` propagates to the whole module graph — no `buildHtml` changes needed when adding a module):
    - `panel.js` — entry point; wires toolbar/keyboard/message events and the render loop only.
@@ -83,270 +94,172 @@ A second TCP server — `SimStubServer` on port 14238 (`src/simStubServer.ts`) �
      axis labels left. Keep the buffer resize inside the loop.
    - `pose.js` — pose number inputs ⇄ gizmo sync.
    - `messaging.js` — `readState()` / `sendState()` / rAF-debounced `scheduleSend()`.
-   - `simulation.js` — fixed-timestep integration (60 Hz accumulator, stretched by the time scale) + recording/playback. Owns the toolbar's speed dropdown.
-   - `timeScale.js` — **simulation speeds + the current one, pure module** so `test/timeScale.test.mjs` runs it in Node. `src/physServer.ts` keeps its own copy of `TIME_SCALES` to validate the webview; the test asserts they agree. See "Simulation speed" below.
+   - `simulation.js` — fixed-timestep integration (60 Hz accumulator, stretched by the time scale) + recording/playback. Owns the toolbar's speed dropdown. The tick's math is `integrator.js`'s; this file only moves it between the gizmo and the number inputs.
+   - `integrator.js` — **one Simulate tick, pure module** (semi-implicit Euler, rotation wrapped). Its TypeScript twin is `src/agent/motion.ts`, guarded by `test/motion.test.mjs`.
+   - `timeScale.js` — **simulation speeds + the current one, pure module** so `test/timeScale.test.mjs` runs it in Node. `src/engine/physState.ts` keeps its own copy of `TIME_SCALES` to validate the webview; the test asserts they agree. See "Simulation speed".
    - `presets.js` — preset save/load/delete UI intents.
    - `logging.js` — CSV channel logging: owns the toolbar button, batches rows over `postMessage`, and reflects the host's authoritative `csvState` (starting is a round trip — the save dialog can be cancelled).
    - `csv.js` — **column set, row formatting and sample bookkeeping, pure module** (no DOM) so `test/csv.test.mjs` runs it in Node. Owns `CSV_HEADER`, which the webview sends as the log's first row — the host never learns what a channel is. `tickRow`/`sendRow` implement the one-row-per-frame handshake: `stepSimulation()` calls `sendState()` after its tick loop, and without it every simulated frame would end with a duplicate of its last tick.
    - `visuals.js` — the path trail (a `THREE.Line` with an age-faded vertex colour) and the world-frame velocity arrow, plus the sidebar toggles that own them. Samples per **tick** (called from `simulation.js`'s fixed-timestep loop) as well as per rAF, so a throttled panel still records the path at full resolution.
    - `trail.js` — **trail ring buffer + arrow scaling, pure module** (no DOM/three) so `test/trail.test.mjs` runs it in Node. The buffer shifts rather than wraps: the vertex order must equal the draw order or the line draws a stray segment across the seam.
-   - `mcScreen.js` — microcontroller monitor rendering (always on macOS, opt-in on Windows); draws `SimStubServer`'s forwarded screen config/draw commands and relays touch input back. Handles **any number of screens** — one `<canvas>` each, all at one shared zoom factor. See "Monitor colours" below before touching `makeColour()`, "Monitor rendering cost" before making it draw through the canvas 2D API again, and "Multiple monitors" before touching the screen controls.
+   - `mcScreen.js` — the monitor view. Shows the engine's finished frames (`screenPixels`: `{screen, width, height, pixels}` with `pixels` the engine's "game-rgba8" bytes) on one `<canvas>` per powered monitor, all at one shared integer zoom, and relays touch back. It draws nothing itself. See "Monitor display" and "Multiple monitors".
    - `monitorDom.js` / `monitorMessaging.js` — the monitor section's elements and its webview→host messages, split out of `dom.js` / `messaging.js` so `mcScreen.js` imports nothing from the 3D panel. Keep it that way: the stand-alone monitor window loads `mcScreen.js` without `dom.js`, which throws on the first panel element it can't find.
-   - `monitors.html` / `monitors.js` — the **stand-alone monitor window** (`physim.monitors.openInNewWindow`, default off, or the `physim.openMonitors` command). Its `#monitors` block mirrors `panel.html`'s; the ids are the contract with `monitorDom.js`. See "Monitor window" below.
-   - `monitorConfig.js` — **monitor sizes, screen-number allocation and the shared fit scale, pure module** (no DOM/canvas) so `test/monitorConfig.test.mjs` runs it in Node. `SimStubServer` validates independently — a webview message is untrusted — and `test/simstub.test.mjs` checks the host accepts everything the dropdown offers.
-   - `blend.js` — **colour packing + the game's 4-channel blending, pure module** (no DOM/canvas) so `test/blend.test.mjs` runs it in Node. Owns the endianness probe that decides how RGBA bytes pack into an ImageData word.
-   - `pixelFont.js` — the 4x5 bitmap font TEXT/TEXTBOX are rasterised with (`fillText` at 5px would anti-alias into unreadable mush), glyphs read off in-game screenshots where available, plus TEXTBOX wrapping/placement (`wrapTextBox` / `layoutTextBox`).
-   - `raster.js` — **integer-grid line/circle/triangle/rectangle rasterisers, pure module** (no DOM/canvas — the target is a `plot`/`fillRun` callback) so `test/raster.test.mjs` can run them in Node. Canvas path drawing anti-aliases, which the integer CSS upscale magnifies into a visible haze; Stormworks monitors have no AA. Every rasteriser clips to the screen, so a microcontroller passing ±1e9 coordinates can't hang the panel. The rules are fitted to in-game screenshots — see "Monitor rasterising" below before changing any of them.
-   - `panel.css` — the one stylesheet, shared by `panel.html` and `monitors.html`. Owns `.monitor-canvas`, whose black background is part of the compositing (see "Monitor rasterising").
+   - `monitors.html` / `monitors.js` — the **stand-alone monitor window** (`physim.monitors.openInNewWindow`, default off, or the `physim.openMonitors` command). Its `#monitors` block mirrors `panel.html`'s; the ids are the contract with `monitorDom.js`. See "Monitor window".
+   - `monitorConfig.js` — **monitor sizes, screen-number allocation and the shared fit scale, pure module** (no DOM/canvas) so `test/monitorConfig.test.mjs` runs it in Node. `src/engine/screens.ts` validates independently — a webview message is untrusted — and `test/screens.test.mjs` checks the host accepts everything the dropdown offers.
+   - `panel.css` — the one stylesheet, shared by `panel.html` and `monitors.html`. Owns `.monitor-canvas`, whose black background is part of the compositing (see "Monitor display").
    - `globals.d.ts` — ambient `acquireVsCodeApi()` declaration for `npm run check:media`. `media/package.json` is only `{"type": "module"}`, so Node tests can import these files as ES modules; it is excluded from the `.vsix`.
    Coordinate convention is **Stormworks left-handed (X+ East, Y+ Up, Z+ North)** — three.js itself is right-handed, so the camera is positioned to make `+Z` look like "into the screen / north" without any scene-level flipping. The modules are vanilla JS with JSDoc types, checked by `npm run check:media` (strict).
 
-2. **`src/`** — the extension host.
-   - `extension.ts` activates on `onStartupFinished`, listens for `vscode.debug.onDidStartDebugSession` filtered by `session.type === "lua" && session.name === "Run Simulator"` (the exact config LifeBoatAPI produces in its `runSimulator.js`). On match it starts `PhysServer` and opens the panel.
-   - `physServer.ts` is a single-client `net.createServer` on `127.0.0.1:<port>` using the **same length-prefix protocol as LifeBoatAPI's `SimulatorConnection.lua`**: `sprintf("%04d", body.length) + body`. Don't reorder the 12 fields — `PhySim.lua` parses positionally. It also sends `RATE|<ticks/s>` (see "Simulation speed").
-   - `physSimPanel.ts` serves `media/panel.html` (the **authoritative** markup template) after substituting the `{{…}}` placeholders — CSP, nonce, webview-resource URIs, slider bounds. `substituteTemplate` (in `template.ts`) throws if a placeholder is left unresolved. Note: an HTML comment in the template must never contain a literal double-brace token, or the leftover check trips.
-   - `debugConfigPatcher.ts` is the **critical glue**: see "LifeBoatAPI integration" below.
-   - `libraryPathInjector.ts` writes the bundled `lua/` path into `lifeboatapi.stormworks.libs.libraryPaths` for editor autocompletion. Re-run on `onDidChangeWorkspaceFolders`. The **runtime** does not depend on this setting — only autocomplete does.
-   - `pathUtils.ts` — shared `normalize()` for Windows-safe path comparison (used by both files above).
-   - `log.ts` — the `PhySim` Output channel (`log()` / `showLog()`, behind the `physim.showLog` command). The monitor path has several outcomes that are silent by design (the Windows opt-in left off, 14238 already held, an upstream template change making a patch a no-op); the log is where each one says so.
-   - `simStubServer.ts` — the port-14238 stand-in for `STORMWORKS_Simulator.exe`; started from `debugConfigPatcher.ts` before `lua-debug` spawns Lua, whenever `useBuiltInMonitors()` says PhySim is drawing the monitors. Also owns the panel's declared monitors (`configureScreen` / `removeScreen` / `getWantedScreens`) — see "Multiple monitors".
-   - `simulatorLuaPatch.ts` — the `_simulator.lua` text surgery (socket injection, POSIX file-scan shim, exe-launch suppression) as a **pure, `vscode`-free module** so `test/simulatorLuaPatch.test.mjs` can run it in Node.
-   - `frame.ts` — the `%04d`-length-prefixed framing shared by `physServer.ts` and `simStubServer.ts`.
-   - `sessionAuth.ts` — the per-session token both servers require as a connection's first frame (`PHYSIM_AUTH|<hex>`), and `AuthGate`, which holds a new connection aside until it presents it. Without it any local process (or a browser page reaching loopback) could take either server's single client slot: ending the simulator session on 14238, or reading the pose stream on 14239. The newest *authenticated* connection still wins, so F6 again replaces the old Lua. One token per port, renewed on every F6 by `debugConfigPatcher.ts`.
+2. **`src/`** — the extension host. Everything except `extension.ts`, `physSimPanel.ts` and `log.ts` imports no `vscode`, so the tests run it in plain Node.
+   - `extension.ts` — activates on `onLanguage:lua` / `onDebugResolve:physim`. Registers the commands, the `physim` debug adapter (an inline `DebugAdapterInlineImplementation` around `PhysimDebugSession`) and its configuration provider (fills in `program` from the active editor, also for F5 with no launch.json). `physim.run` / `physim.runWithoutDebugging` call `vscode.debug.startDebugging` with `{ noDebug }`; the adapter's `launch` hook calls `Simulation.start`. Before running or building it `saveAll`s (what runs is what is on disk). Owns the `physim.running` context key (Stop command / editor-title buttons), routes `print`/`debug.log` into the Debug Console, and turns build problems into the `physim-build` diagnostic collection. Reads `physim.libraryPaths` and the legacy `lifeboatapi.stormworks.libs.libraryPaths` per resource.
+   - `simulation.ts` — `Simulation`: the current run (an `EngineSession`, or none) plus everything that outlives a run — pose, speed, the panel's wanted monitor layout, the latest frame per monitor (for a webview opened mid-run). Hands the remembered state to each new run, so a script started after the gizmo moved sees the pose from tick 1. Every session callback checks it still belongs to the current run, so a replaced worker's late messages can't repaint the panel. On a Lua error the monitors keep their last picture; `stop()` blanks them.
+   - `runTarget.ts` — `requireRoots()`: the directories `require` searches, in precedence order (see "LifeBoatAPI compatibility").
+   - `debugSession.ts` — `PhysimDebugSession`, the Debug Adapter Protocol as plain JSON. See "Debugger".
+   - `build.ts` — `collectProject` (the entry plus every file reachable through literal `require("…")` strings, found by regex and resolved with `SourceRoots`; capped at 1024 files) and `buildScript` (`compiler.buildLifeboat(..., { environment: "game", minify })`, diagnostics mapped back to files, size counted in characters against `GAME_SCRIPT_LIMIT` = 8192).
+   - `buildRunner.ts` / `buildWorker.ts` — one build per worker thread; the worker loads the engine's compiler WASM (`dist/compiler-wasm/compiler_bg.wasm`, found next to the runtime WASM because the package doesn't export its path).
+   - `physSimPanel.ts` serves `media/panel.html` (the **authoritative** markup template) after substituting the `{{…}}` placeholders — CSP, nonce, webview-resource URIs, slider bounds. `substituteTemplate` (in `template.ts`) throws if a placeholder is left unresolved. Note: an HTML comment in the template must never contain a literal double-brace token, or the leftover check trips. It validates every webview message (`sanitizePhysState`, `sanitizeTimeScale`, `sanitizeScreenRequest`) before it reaches `Simulation`, persists presets/monitor layout/speed in `workspaceState`, and posts `screenConfig`/`screenPixels` to whichever webview shows the monitors. Closing the panel zeroes the pose and puts the speed back to ×1.
+   - `log.ts` — the `PhySim` Output channel (`log()` / `showLog()`, behind the `physim.showLog` command): activation, each run's `require` search list, build results, run endings.
    - `template.ts` — `substituteTemplate` and the per-page `{{placeholder}}` lists, as a **pure, `vscode`-free module**. `buildHtml`'s values are typed from the lists, so a new placeholder goes there first; `test/webviewHtml.test.mjs` checks the HTML uses exactly those.
    - `csvLogger.ts` — the CSV log file: open/append/close plus row sanitising, as a **pure, `vscode`-free module** so `test/csvLogger.test.mjs` can run it in Node. It appends whatever lines it is handed and counts them; the column set lives in `media/csv.js`.
+   - `engine/loadEngine.ts` — loads the runtime once per thread: dynamic `import()` of the ESM package (kept real by `module: Node16`) and the WASM read from disk and passed as `wasmBinary` (not every extension-host Node can fetch a `file:` URL).
+   - `engine/session.ts` — `EngineSession`, the host's handle on one run: owns the worker, forwards panel input, matches requests to responses, turns a dying worker into `ended("crash")`. One session = one run; to run again, dispose and create a new one (a fresh VM).
+   - `engine/protocol.ts` — the host⇄worker message types (types only). Structured clone, never JSON: the debugger's values carry `bigint` and `Uint8Array`.
+   - `engine/worker.ts` — the worker: loads the engine, builds a `VehicleRunner`, ticks it at 60 Hz × the time scale with an owed-time accumulator (at most `MAX_CATCH_UP` = 4 ticks back to back; beyond that the backlog is dropped, so a too-slow script runs slow instead of freezing the monitors). Messages that arrive while the engine is still loading are queued and applied before the script's top level runs. A debugger `resume` is answered first and run in a microtask, so the stop it may hit is an event, not the reply.
+   - `engine/runner.ts` — `VehicleRunner`, one run with no timer and no transport: creates the VM (`environment: "extended"`, control namespace `__physim`, host bindings under `__physim_host`, `requireLoader` over `SourceRoots`), and runs a tick as a queue of phases — prelude tick → `onTick` → `onDraw` per powered monitor (decided after `onTick`, which may call `setScreen`). A breakpoint suspends the phase at the head; `resume()` continues it and drains the rest, so nothing in a tick runs twice. Keeps the last frame per monitor and reports only changed ones; a powered monitor without `onDraw` gets a blank frame.
+   - `engine/prelude.ts` — the Lua loaded before the user script (chunk `@physim:prelude`): LifeBoatAPI's `simulator` object and the per-tick default inputs. See "LifeBoatAPI compatibility".
+   - `engine/screens.ts` — `ScreenRegistry`: monitors (32 px per block, portrait swap, caps `MAX_BLOCKS` 9 and `MAX_SCREENS` 8), per-monitor touch, `sanitizeScreenRequest` for anything from the webview or saved state, and `declareFromScript` (LifeBoatAPI's numbering rule).
+   - `engine/sourceRoots.ts` — `SourceRoots.resolve(name)` (dotted name → `.lua` / `/init.lua` / `.luah`, first root wins, looked up on demand rather than indexed), `moduleSegments` (refuses slashes, `..`, empty segments, drive letters — `require` must not read outside the roots), and `chunkName`/`chunkFile` (`@`-prefixed, forward-slashed, lower-case drive letter; a breakpoint only binds when its chunk name is byte-for-byte the loaded one).
+   - `engine/physState.ts` — `PhysState`, `sanitizePhysState`, `TICKS_PER_SEC`, `TIME_SCALES` / `sanitizeTimeScale`. Shared by host and worker.
 
-3. **`lua/PhySim.lua`** — runs inside LifeBoatAPI's sandbox.
+   - `mirrorServer.ts` — the window's end of the panel mirror: listens on a local socket per workspace folder for an agent's MCP server and reports what it sends. No vscode import.
+   - `agent/` — **the AI tools (beta)**, a fourth entry point beside the extension: `node out/agent/server.js` is an MCP server an agent's client starts as a child process. No vscode import anywhere in it. See "AI tools".
 
-## LifeBoatAPI integration (read before touching `debugConfigPatcher.ts` or `PhySim.lua`)
+3. **`lua/PhySim.lua`** — the module scripts `require("PhySim")`. Found through the bundled `lua/` root, which `runTarget.ts` puts after `physim.libraryPaths` and before the legacy LifeBoatAPI setting. Reads the pose from `__physim_host.phys()` / `__physim_host.tickRate()`.
 
-`assets/lua/Common/LifeBoatAPI/Tools/Simulator/SimulatorSandbox.lua` in the LifeBoatAPI extension builds an extremely restricted `_ENV` for user scripts. Things that are NOT available inside the sandbox:
+## LifeBoatAPI compatibility (read before touching `prelude.ts`, `sourceRoots.ts`, `runTarget.ts` or `PhySim.lua`)
 
-- C modules — including `socket`. `require("socket")` from sandboxed code **always fails**.
-- `setmetatable`, `getmetatable`, `pcall`, `error`, `assert`, `select`, `_G`, `io`, `package`, `loadstring`, `load`, `rawget`/`rawset`, …
-- `require` returns nothing — its custom implementation calls the loaded chunk but discards the return value. Modules must publish themselves as globals.
+Scripts written for LifeBoatAPI's simulator must run unchanged. Nothing of LifeBoatAPI is installed, loaded or bundled; the behaviour is re-implemented.
 
-We solve both barriers in `debugConfigPatcher.ts`'s `resolveDebugConfigurationWithSubstitutedVariables`, which VSCode calls during `vscode.debug.startDebugging` AFTER LifeBoatAPI has written `_build/_simulator.lua` but BEFORE `lua-debug` spawns Lua:
+- **`simulator` global** (`prelude.ts`): `setScreen(n, size, poweredOn, portrait)`, `setInputBool/Number(i, v)` (index must be 1..32, `nil` value ignored), `setProperty(label, value)` (number/string/boolean only), `getTouchScreen(n)` (LifeBoatAPI's table shape), `exit()`. `getIsClicked`/`getIsToggled`/`getSlider` read the panel's buttons and sliders (see "Buttons, toggles, sliders" below). `setFrameRate` is a no-op: the tick rate belongs to the panel.
+- **Per-tick defaults**, as in LifeBoatAPI's `Simulator._simulateDefaultInputs`: before `onLBSimulatorTick`, monitor 1's touch goes to bool 1–2 and number 1–6 (width, height, x, y, xAlt, yAlt). A channel the script has set through `simulator:setInput*` is never overwritten by these defaults again in that run (sticky), which is why `injectAsInputs(simulator, 1)` hides touch coordinates.
+- **`onLBSimulatorTick(simulator, ticks)`** runs after the defaults and before `onTick`.
+- **`require`**: include-once, returns nothing (the engine's development loader keeps LifeBoatAPI's convention), globals shared between modules. Name rule as LifeBoatAPI's `SimulatorSandbox`: dots are directory separators, `init.lua` names its directory, `.luah` is a hidden Lua file. Roots in order (`runTarget.ts`): the workspace folder (or the script's directory), `physim.libraryPaths`, the bundled `lua/`, then the legacy `lifeboatapi.stormworks.libs.libraryPaths` if a workspace still has it — read as plain settings data. The legacy setting is last because 1.x wrote its own `lua/` directory into it (`autoInjectLibraryPath`): searched before the bundled directory, the 1.x socket `PhySim.lua` left there loads instead and `PhySim` stays nil. Last of all comes `<workspace>/_build/libs`, where LifeBoatAPI clones its git libraries (its own Lua library by default) and which it always searched: a project set up there keeps `require("LifeBoatAPI")` working with no setting. A project can shadow a library; nothing can shadow the project. The LifeBoatAPI Lua **library** (LBVec etc.) is not bundled.
+- **Monitors**: one 3x3 screen 1 by default; `setScreen` with a number that names no existing monitor takes the lowest free number (LifeBoatAPI's rule, `declareFromScript`); a monitor that doesn't exist reads as a fresh LifeBoatAPI `SimulatorScreen` (powered, 32x32, untouched).
+- **Build**: the engine's `buildLifeboat` keeps LifeBoatAPI's conventions — `---@section __LB_SIMULATOR_ONLY__` always removed, `---@section name` regions removed when unused.
+- **Buttons, toggles, sliders** (`engine/controls.ts`, `ControlBoard`): the exe window's ten buttons and ten sliders, kept as state the host holds. `getIsClicked(n)` is true while button n is down; **a button and its toggle are one control** — every press flips `getIsToggled(n)`; `getSlider(n)` is 0..1; a number outside 1..10 reads `false`/`0` without an error (all as in LifeBoatAPI's `Simulator.lua`). Two deliberate differences: the panel shows only the controls the script has **read** (the board records them and fires `onControls`; the three getters go through `__physim_host.control`, which is how the host finds out), and a press is **latched until a tick has run** (`endTick()`, called when `onTick` completes), so a click between two ticks is not lost. Slider positions live in `Simulation` and survive runs; toggles start afresh. The webview side is `media/controls.js`, inside `#monitors` so it travels with the monitor window; the controls are cleared whenever the run that read them is gone.
+- **Not kept**: the exe's input/output panel, LifeBoatAPI's colour gamma (see "Monitor display"), `lua-debug` (the debugger is PhySim's own).
+- **Keys**: `physim.run` is F6 and `physim.build` F7 (`editorTextFocus && editorLangId == lua && !inDebugMode`) — the same keys as LifeBoatAPI's, whose bindings carry no `when` at all. With both installed they collide. The setting `physim.keybindings.useF6F7` (default on) is ANDed into those two bindings' `when` as `config.physim.keybindings.useF6F7`, so turning it off hands F6/F7 back; Shift+F6 / Shift+F7 are bound to the same commands unconditionally, so PhySim always has keys of its own.
 
-1. **Append the bundled `lua/` dir to `config.arg`.** LifeBoatAPI's `_simulator.lua` does `for i=3, #arg do rootDirs[...] = arg[i] end`, so anything we push gets indexed by `SimulatorSandbox`'s require map. This is why PhySim works in any LifeBoatAPI project without per-project setup — do NOT replace this with a settings-file approach.
-2. **Patch `_simulator.lua`** to insert `sandboxEnv._physim_socket = require("socket")` right after the `createSandbox(rootDirs)` line. The regex `SANDBOX_LINE_RE` matches that line; the `_physim_socket` marker prevents double-patching. All of the `_simulator.lua` text surgery lives in `simulatorLuaPatch.ts`, which imports no `vscode` so the tests can drive it directly.
-3. **Flip `_beginSimulation(false, …)` to `true`** whenever `useBuiltInMonitors()` is true. That `false` is LifeBoatAPI's own `attachToExistingProcess` flag, and the `true` path skips the `io.popen` that launches `STORMWORKS_Simulator.exe` — the Lua then connects to whatever already holds 14238, which is `SimStubServer`. Without this the real exe would fight us for the port on Windows (on macOS the launch just fails harmlessly, but there is no reason to attempt it). `Simulator.lua` only ever *assigns* `_simulatorProcess`, so nothing downstream misses the handle.
-4. **Embed the session tokens** (`sessionAuth.ts`). A `local _physim_token, _physim_monitor_token = "…", "…"` line is prepended; the socket injection also copies `_physim_token` into the sandbox, where `PhySim.lua` sends it on connect; and, with built-in monitors, a wrapper around `SimulatorConnection.new` goes in right before `_beginSimulation` so the monitor token is the first frame on 14238, ahead of `SCREENCONFIG`. A second patch pass only swaps the token line — each F6 renews the tokens, and a stale one locks the Lua out.
+Constraints on `lua/PhySim.lua`:
 
-On `process.platform === "darwin"`, three more patches apply:
+- **No metatables, no `pcall`/`error`.** `PhySim` is a singleton — `PhySim:new()` re-initialises the same global table and returns it. It is never shipped into the game (it belongs in an `__LB_SIMULATOR_ONLY__` section), but it stays valid in the game's restricted environment anyway.
+- **Publish as a global**, don't return from the chunk — `require` discards return values.
+- **Bail out at the top** with `print` + `return` when `__physim_host` is missing (required outside PhySim).
+- **Keep the 1.x API**: `new(host, port)` accepts and ignores its arguments, `close()` is a no-op, `isAlive` stays `true` — existing scripts call them.
+- `math.atan` is the Lua 5.3 form `math.atan(y, x)`; `math.atan2` doesn't exist.
+- `__physim` and `__physim_host` are reserved global names.
 
-5. **Prepend `luasocket/darwin/?.so` to `config.cpath`.** LifeBoatAPI's own cpath entries are literal `.dll` file paths with no `?` template, and Lua's `package.searchpath` returns the first *readable* file regardless of module name — so our entry must be prepended, never appended, or it's never tried. See `doc/macos-support.md` for the discovery.
-6. **Override `config.luaArch`** to the native arch (`arm64` or `x86_64`) — LifeBoatAPI hardcodes `"x86"`, which would otherwise run Lua under Rosetta instead of natively.
-7. **Replace `FileSystemUtils.findPathsInDir`** (injected into `_simulator.lua` right *before* the `createSandbox` line, while the socket line goes after). LifeBoatAPI enumerates files with Windows `dir "..." /b`, which returns nothing on macOS — the sandbox's require map ends up empty and the user's script fails with "Could not find require". The shim uses POSIX `find -mindepth 1 -maxdepth 1 -type f|d` and returns bare names, matching the original contract. See `doc/macos-support.md` blocker 4.
+## Debugger
 
-Constraints this puts on `lua/PhySim.lua`:
+`src/debugSession.ts` maps DAP onto the engine's debugger (requests go host → worker → `VehicleRunner`): line breakpoints (bound by chunk name and line; every breakpoint is reported verified, because the engine can't say in advance whether a line holds code), step into/over/out, one thread ("Microcontroller"), stack frames addressed by level (PhySim's prelude shown de-emphasised), Locals/Upvalues scopes (compiler temporaries `(…)` filtered), table expansion in pages of 200 up to 2000 entries, evaluate for watch and hover. `variablesReference`s are valid for one stop only — cleared on every continue/step.
 
-- **No metatables.** `PhySim` is a singleton — `PhySim:new()` re-initialises the same global table and returns it.
-- **No `pcall`/`error`.** Bail out by `print` + `return` at the top level.
-- **Publish as a global**, don't return from the chunk (return is harmless but useless inside the sandbox).
-- Read `_physim_socket` from the chunk's `_ENV` — that's the injected `socket`.
-- `math.atan` is Lua 5.3 form `math.atan(y, x)`; `math.atan2` doesn't exist.
+What it refuses, deliberately:
+
+- **Pause.** The engine suspends only at a breakpoint or step, never on request from outside; the request fails with a message rather than being faked.
+- **Stepping across ticks.** A step that runs off the end of `onTick`/`onDraw` finishes the tick and the script runs on.
+
+A suspended script holds the whole simulation (ticks and monitors). The panel keeps working — its Simulate integrator is in the webview and does not know about the debugger — and its changes reach the next tick. `noDebug` runs launch with no breakpoints. Ending the debug session (any way) stops the script; starting a new run ends the previous debug session.
+
+## Build
+
+`PhySim: Build` (F7) → `extension.ts` `build()` → `runBuild` (worker) → `buildScript`. `collectProject` only decides which files to offer the compiler: its regex also matches inside comments, strings and simulator-only blocks, which is harmless — an offered module that is never really required is left out, and a really-required missing one is the compiler's error, with a location. Output environment is `game` (no `print`/`pcall`/`require`). Written to `physim.build.outputDirectory` (default `_build/release`, relative to the workspace folder or the script's folder) under the entry's base name; over 8192 characters it is still written, with a warning.
+
+## AI tools (beta)
+
+`doc/ai-integration-spec.md` (Japanese) records what was decided and why; the "AIエージェント連携（ベータ）" section of `doc/next/README.md` is the user-facing description. Stage 1 is a headless MCP server; stage 2 mirrors its run into a VSCode window's panel (see "The panel mirror" below).
+
+The server is the panel's run with the clock taken out. `AgentSession` owns a `VehicleRunner` directly — no worker, no timer — and advances it only when asked ("run 60 ticks"), so the same calls always give the same pixels. That repeatability is the point: it is what lets an agent tell whether its edit changed anything.
+
+- `agent/server.ts` — the process entry: stdin lines → `McpServer.handleLine` → stdout lines, one request at a time. **stdout carries protocol lines only**; anything for a person goes to stderr.
+- `agent/mcp.ts` — JSON-RPC 2.0 / MCP for a tools-only stdio server, hand-written so the `.vsix` gains no dependency. A tool that throws becomes a result with `isError` (the model reads it and reacts); only malformed requests are JSON-RPC errors.
+- `agent/tools.ts` — the 22 tools: schema, argument checks, and the mapping onto `AgentSession`. Arguments come from a language model, so every one is checked by hand and a wrong one is answered with a sentence saying what was expected; a request is validated in full before any state changes. Answers are JSON text laid out by `formatAnswer` (one top-level field per line; a text grid's rows a line each).
+- `agent/agentSession.ts` — the run plus what outlives it. **The pose and the named snapshots survive `start`; held inputs, touch and monitors do not.** A Lua error is a state (`failed`, with the message) rather than a thrown request, and the last pictures and I/O stay readable.
+- `agent/pixels.ts` — the monitor as numbers: region stats, diff, expectations, text grid. Every colour is the **visible** one (rgb × alpha / 255 over black, as the panel composites), and "lit" means that colour is not black.
+- `agent/png.ts` (opaque RGB, integer upscale, `node:zlib` only), `agent/scenario.ts` (the panel's CSV log read back as poses, by column name), `agent/project.ts` (workspace folder by walking up to `.git` or a `.vscode` that holds a project file — **never a bare `.vscode`, and never the home directory**: VSCode keeps `~/.vscode` on every machine, which would make all of `$HOME` the workspace — then `.vscode/settings.json` parsed as JSONC and the same `requireRoots` as F6), `agent/motion.ts` (the integrator twin).
+
+Two things in the engine layer exist for the tools:
+
+- **Held inputs** (`VehicleRunner.holdInputNumber/Bool`, the `__physim_host.inputs` binding, the block in `prelude.ts`'s tick). They are written every tick after the touch defaults and before `onLBSimulatorTick`, and skip any channel the script has set through `simulator:setInput*` — the same "script wins" rule as monitors. They cannot be written from the host directly: only the prelude knows which channels the script has claimed.
+- **Properties** (`RunnerOptions.properties`, `VehicleRunner.setProperty`). Start-up values are in place before the top level, so a `simulator:setProperty` in the script replaces them; a later `setProperty` from outside is a single write.
+
+`build_script` is the only tool that writes to disk. Its target must be inside the workspace folder **after following symbolic links** (`ToolEnvironment.realPath`), is never a source file of the build, and outside the default `_build/release` does not replace an existing file without `overwrite: true`. A pose that overflows while integrating is an error before the tick runs — the script is never fed a non-finite value.
+
+### The panel mirror
+
+The MCP server stays the owner of the run; a window is only **told what to show**. After each state-changing tool call (`McpServer`'s `afterCall` hook → `agent/mirrorClient.ts`) the server sends the run's status, tick, pose, monitor layout and the pictures that changed to a window that has the script's folder — or one above it — open (`src/mirrorServer.ts`, one listener per workspace folder). **Nothing flows the other way**, by design: there is no path from the window, or from anything else that finds the endpoint, into the agent's run. That is also why the tools exist once, not once per front end.
+
+- `agent/mirrorLink.ts` — the protocol, shared by both ends: endpoint naming, NDJSON encode, and a decoder that checks every field (the receiver is an extension host; a line that fails ends the connection).
+- **The endpoint must not depend on the environment.** An agent's client starts its MCP servers with a trimmed environment (no `TMPDIR`), the window has the full one; a socket under `os.tmpdir()` was simply never found. It lives in `~/.physim/<hash>.sock` (directory 0700, socket 0600), falling back to `/tmp/physim-<uid>-<hash>.sock` only when the home path is too long for a socket.
+- **Windows:** a pipe has no directory to keep other users out, and a name computed from the folder could be claimed first by someone else, who would then receive the pictures. The window makes up a random pipe name and writes it to `~/.physim/<hash>.pipe`; the server reads it there (`usesPointerFile`). Not yet run on a real Windows machine — the tests exercise the lookup with a Unix socket standing in.
+- A connection counts only after its `hello`. Before that it may be another window probing whether the endpoint is alive, and must not displace the agent being shown.
+- `Simulation.showMirror` / `clearMirror` hold the display rule: **the window's own run always has the panel**; the agent's is shown while there is none, and comes back on Stop. `getScreens()` / `getFrames()` answer for whichever is on show, so the panel and the monitor window need no special case.
+- The agent's buttons and sliders ride along (`MirrorUpdate.controls`, optional on the wire so an older server still decodes). `Simulation.getControls()` answers for whichever run is on show, and `syncControls()` announces only a real change; the panel sends `controlsConfig` with `readOnly: true` while a mirror is shown, and `media/controls.js` then draws the state (held included) with everything disabled.
+- The pose reaches the gizmo as a `mirrorPose` message (the preset path with the trail kept). The webview echoes it back as its own state, which only reaches this window's `Simulation`.
+- `physim.agent.showInPanel` (default true) turns the window's listening off; `PHYSIM_MIRROR=0` in the server's environment turns the server's looking off.
+
+Things that surprise: `input.*` reads 0 inside `onDraw` (the engine's own contract — its `docs/specs/numeric-io.md` says the real game has not been measured, so do **not** describe it as the game's behaviour; see `doc/storm-lua-engine-requests.md` item 4) and the build rejects `print`/`require` outside `__LB_SIMULATOR_ONLY__`; both are in `SERVER_INSTRUCTIONS` so the agent is told. The extension's only part is `physim.copyMcpConfig`, which copies the config with the installed path — the path holds the version, so it is a command and not a line of documentation.
 
 ## Channel layout (CH1–17)
 
-`PhySim:injectAsInputs(simulator, startCh)` writes 17 consecutive channels via `simulator:setInputNumber`. CH1–12 are the raw 12 floats from the wire protocol; CH13–17 are derived locally with trig on the rotation values. On the JS side this math is single-sourced in `media/channels.js:deriveChannels`; the Lua side stays hand-written in `injectAsInputs` (the sandbox cannot share code with JS) and `test/parity.test.mjs` asserts the two agree — extend its vector table when changing the math.
+`PhySim:injectAsInputs(simulator, startCh)` writes 17 consecutive channels via `simulator:setInputNumber`. CH1–12 are the raw pose values from `__physim_host.phys()` (12 numbers, order position/rotation/velocity/angularVelocity — `runner.ts` and `PhySim.lua:update()` must agree); CH13–17 are derived locally with trig on the rotation values. On the JS side this math is single-sourced in `media/channels.js:deriveChannels`; the Lua side stays hand-written in `injectAsInputs` (Lua cannot share code with JS) and `test/parity.test.mjs` asserts the two agree — extend its vector table when changing the math.
 
 The Stormworks tick rate (60 Hz) is baked into the m/tick → m/s and rad/tick → RPS conversions for CH13 and CH14.
 
-CH4–6 are normalized to **[-π, π)**. That math is also doubled: `normalizeAngle()` in `media/channels.js` (applied in `readState()` and in the integrator so the pose inputs stay wrapped too) and `_normAngle` in `lua/PhySim.lua` (applied when `update()` parses a frame, so `phys:rotation()` and CH4–6 always agree). Lua's `%` is floor-modulo and JS' is a remainder — the JS side needs the sign fix-up, the Lua side doesn't. Wrapping is idempotent, so applying it on both sides is harmless. `test/roundtrip.test.mjs` pins the Lua half against the JS twin.
+CH4–6 are normalized to **[-π, π)**. That math exists three times (the third, `normalizeAngle` in `src/agent/motion.ts`, is pinned by `test/motion.test.mjs`); all three fold the one rounding case that would land on +π — a value a hair below -π — back to -π. The first two: `normalizeAngle()` in `media/channels.js` (applied in `readState()` and in the integrator so the pose inputs stay wrapped too) and `_normAngle` in `lua/PhySim.lua` (applied in `update()`, so `phys:rotation()` and CH4–6 always agree). Lua's `%` is floor-modulo and JS' is a remainder — the JS side needs the sign fix-up, the Lua side doesn't. Wrapping is idempotent, so applying it on both sides is harmless. `test/roundtrip.test.mjs` pins the Lua half against the JS twin.
 
-## Monitor colours (macOS panel)
+Composite inputs are float32 in the engine (as in the game), so a script reads CH values rounded to float32; the CSV log records the panel's doubles rounded to six decimals.
 
-LifeBoatAPI gamma-corrects every colour **in Lua** before it reaches us —
-`Simulator_ScreenAPI.lua`'s `_setColorBase` does `255 * ((c/255)/0.85)^(1/2.4)`
-— to replicate what the game does to monitors. It lifts dark tones hard: a
-`setColor` of 30 arrives as 112, and anything from 217 up clips to white. The
-washed-out result is *correct*; don't "fix" it by changing `makeColour()`.
+## Monitor display
 
-The correction is applied unclamped (255 leaves as 272.9), so the panel's
-optional **True colour** toggle (`unGamma`, off by default) inverts it
-losslessly back to the original `setColor` values.
+The engine rasterises; the webview only shows pictures. A frame is the engine's "game-rgba8" buffer: straight (not premultiplied) RGBA in row order, with alpha blended by the same weights as the colour, starting from transparent black each frame. `mcScreen.js` copies the bytes into an `ImageData` unchanged — no alpha correction, no gamma — and the canvas composites it over `.monitor-canvas`'s **black** background, which is what makes the visible colour rgb × alpha (`doc/ingame-findings.md` D9 / B4). Keep it black.
 
-This curve is LifeBoatAPI's model, not something measured on the game's
-monitor: B1's screenshots go through scene lighting and tone mapping, so they
-can't pin an absolute curve. Keep it apart from `doc/monitor-rendering.md`,
-whose blending rules are stated on the `setColor` values a script passes.
+Colours are the `setColor` values themselves. LifeBoatAPI gamma-lifted every colour in Lua (`255 * ((c/255)/0.85)^(1/2.4)`), and 1.x showed that lift, with a "True colour" toggle (`unGamma`) to undo it. Both are gone: that curve was LifeBoatAPI's model, not something measured on the game's monitor (B1's screenshots go through scene lighting and tone mapping, so they can't pin an absolute curve).
+
+Frames are sent only when they changed (`VehicleRunner` compares bytes per monitor). In the webview, `applyScreenPixels` keeps only the newest pending frame per monitor, drops one whose size doesn't match the canvas (a frame drawn just before a resize), and repaints in one `requestAnimationFrame` (`scheduleRepaint`). That is also what keeps a hidden panel from painting: `retainContextWhenHidden` means the webview still receives every message while hidden, but rAF doesn't run.
+
+`screen.drawMap` has no terrain to draw: the runner's map provider fills with the ocean colour (`setMapColorOcean`, else 1.x's default blue). The engine has no `map` table; `prelude.ts` defines `map.screenToMap` / `map.mapToScreen` with LifeBoatAPI's formulas (floored). Alt touch is never sent (always 0).
+
+## Monitor rasterising (the in-game fixture)
+
+The rules a monitor follows are fitted to **screenshots of the real game** (Stormworks v1.15.23; Apple M5 and RTX 4070Ti give identical pixels, except on a vertex exactly on a 1/512px tie). `doc/ingame-findings.md` has the evidence and `doc/monitor-rendering.md` the rules front to back. Until 1.2.1 PhySim implemented them itself (`media/raster.js`, `blend.js`, `pixelFont.js`, deleted in 2.0.0); now Storm Lua Engine's rasteriser implements them, and this repo's job is to keep checking it against the game:
+
+`test/ingame.test.mjs` runs each verification card page (the `.lua` file itself, through `test/helpers/engineCard.mjs`) on the engine at the page's monitor size and compares the frame, binarised the way the screenshots were, with `test/fixtures/ingame-raster.json` — the lit pixels of 86 pages. All 86 match pixel for pixel. A page's key also names its monitor (`tools/ingame/analysis/screen.mjs`): `D4` is a 3x3 (96x96), `E2_5x3` page E2 on a 5x3 (160x96); card E's pages cover every size from 1x1 to 9x5. To extend it, add a page to `tools/ingame/verify*.lua`, shoot it on the monitor, convert to PNG (`sips -s format png`, named like the key), add it to `PAGES` in `tools/ingame/analysis/export-fixture.mjs` and run it (`<macDir> <winDir> <out.json>`); it refuses a page whose mean calibration residual is over 0.1px or whose two platforms disagree — except the tie pages (F3, G1-G3, `TIE_PAGES`), which take the RTX 4070Ti shot and print how far the Apple M5 one is from it. Card G is read with `tools/ingame/analysis/ties.mjs <shot.png>`, which lists each tie's direction and its distance from `snapUnits()` (the RTX 4070Ti vertex-path model, which now lives in `ties.mjs` itself). Nothing is masked: the green rulers and labels stay under the brightness threshold.
+
+If a fixture page fails after an engine upgrade, the engine changed — fix it there (or pin the old version), not by editing the fixture. Fit changes to the screenshots, never to another monitor emulator.
 
 ## Multiple monitors
 
-The panel can give the microcontroller monitors its script never asked for.
-Nothing about that is patched into Lua — LifeBoatAPI's `Simulator` already
-renders **every** powered-on entry of its `_screens` table (`onDraw` runs once
-per screen, with `screen.getWidth()` reporting that screen's size), and two of
-its own message handlers are enough to populate it:
+The panel can give the microcontroller monitors its script never asked for. `Simulation` keeps the panel's wanted layout and seeds every new run with it: the runner configures the default 3x3 screen 1, then the panel's layout, then the script's own `setScreen` calls land on top. So the script wins any screen number it declares at start-up, and a panel change during the run lasts until the script calls `setScreen` for that number again. `removeScreen` really removes the monitor from the registry (1.x could only power it off, because LifeBoatAPI's Lua had no way to drop a screen).
 
-| Command | Effect in `Simulator.lua` |
-|---------|---------------------------|
-| `SCREENSIZE\|n\|w\|h` | sets the size, **creating** `_screens[n]` if missing (`_screens[n] = _screens[n] or SimulatorScreen:new(n)`, which starts powered on) |
-| `SCREENPOWER\|n\|0` or `\|1` | switches one off/on; off also zeroes its touch state |
+The layout lives in `ctx.workspaceState` under `physim.monitors` (how many screens a microcontroller drives is a property of the project) and is restored before the first run. Screen 1 cannot be removed from the panel (`mcScreen.js` disables its ✕): it is the default screen and the only one whose size and touch reach the composite inputs.
 
-Three things about this are easy to break:
-
-- **Ordering.** `_beginSimulation` sends its default `setScreen(1, "3x3")`
-  *before* the main loop starts reading our messages, so the panel's layout is
-  pushed on the first `SCREENCONFIG` of a connection, not on connect. Push
-  earlier and that default lands on top of a screen 1 the user resized.
-- **Once per connection.** `pushWantedScreens` latches on `pushed`. A script
-  calling `setScreen` every tick would otherwise fight the panel forever. The
-  script wins any screen number it touches, which is the right precedence.
-- **Removal is a power-off.** Lua has no command to drop an entry from
-  `_screens`, so a removed monitor stays there as `poweredOn = false` and comes
-  back if it is added again — or if the script calls `setScreen` for it.
-
-The layout lives in `ctx.workspaceState` under `physim.monitors` (how many
-screens a microcontroller drives is a property of the project) and survives
-`SimStubServer.stop()`, which only clears session state. Screen 1 cannot be
-removed from the panel: it is LifeBoatAPI's default and the only screen whose
-size and touch reach the composite inputs (`Simulator._simulateDefaultInputs`).
-
-In the panel every monitor is drawn at **one shared zoom factor**, fit
-included. Fitting each one to the column separately would scale a 1x1 by 8 and
-a 3x3 by 2, so the small monitor would draw larger than the big one. Fit is
-bounded by width only, as it has always been; tall layouts scroll.
+In the panel every monitor is drawn at **one shared zoom factor**, fit included. Fitting each one to the column separately would scale a 1x1 by 8 and a 3x3 by 2, so the small monitor would draw larger than the big one. Fit is bounded by width only; tall layouts scroll.
 
 ## Monitor window
 
-`PhysSimPanelManager` can show the monitors in a second webview panel
-(`physim.monitors`) moved into its own window with
-`workbench.action.moveEditorToNewWindow` (VSCode 1.85+; older versions keep it
-as a tab). While it exists it **owns the monitors**: `screenTarget()` sends
-every `screenConfig`/`screenFrame` there, and the panel is sent an empty
-`screenConfig`, which hides its section. A `screenRequest` is only answered for
-the current target, so the panel loading later doesn't grab them back.
+`PhysSimPanelManager` can show the monitors in a second webview panel (`physim.monitors`) moved into its own window with `workbench.action.moveEditorToNewWindow`. While it exists it **owns the monitors**: `screenTarget()` sends every `screenConfig`/`screenPixels` there, and the panel is sent an empty `screenConfig`, which hides its section. A `screenRequest` is only answered for the current target (with `Simulation.getScreens()` / `getFrames()`), so the panel loading later doesn't grab them back.
 
-- With the setting on, the window opens on the first powered-on
-  `screenConfig`, not with the panel — on Windows with the real exe there are
-  never any monitors to show.
-- Closing it by hand replays the screens into the panel and sets
-  `monitorWindowDismissed`, so the next `screenConfig` doesn't reopen it;
-  `simulatorStarted()` (each F6) clears that. Turning the setting off closes it
-  without counting as a dismissal.
-
-## Monitor rasterising (read before changing a shape)
-
-`media/raster.js` is fitted to **screenshots of the real game** (Stormworks
-v1.15.23; Apple M5 and RTX 4070Ti give identical pixels, except on
-a vertex exactly on a 1/512px tie — see below), not to any other
-implementation. `doc/ingame-findings.md` has the evidence. `doc/monitor-rendering.md`
-explains the resulting rules front to back, with pixel examples. The monitor is
-plain GPU rasterisation, and five of its rules look like bugs and are not:
-
-- **Lines use the diamond-exit rule** on 1/256px-snapped endpoints. Pixel
-  (px, py) owns the diamond around the *integer* point (px, py) in script
-  coordinates, and is lit when the segment touches it without ending inside
-  it. So the end pixel is never drawn, a 0.5px line lights one pixel and a
-  0.3px line none, and the direction matters. The diamond is **half-open**:
-  its edges are outside, an x-major line's diamond owns only its top corner,
-  a y-major line's its top and right corners (`X_MAJOR_CORNERS` /
-  `Y_MAJOR_CORNERS`). That table is why a half-integer y lands on the lower
-  row but a half-integer x on the left column. It was the only corner
-  assignment out of 512 that fits every page.
-- **A circle is an N-gon, N = clamp(floor(r/2), 8, 16)**, starting at angle 0.
-  Small circles are octagons (r=3 only *happens* to match a midpoint circle);
-  r=22 is an 11-gon, which is why it is not left-right symmetric. A negative
-  radius draws exactly the circle of |r| (E5-E7).
-- **drawTriangleF and drawRectF sample each pixel at its bottom-left corner**;
-  drawCircleF at the top-left. So drawRectF's columns are ceil(x).. but its
-  rows floor(y).. . There is no single offset that fits triangles and
-  circles — do not "unify" them.
-- **drawRect is four lines**, so it covers (w+1)×(h+1) pixels, and a zero
-  width still draws.
-- **A vertex exactly on a 1/512px tie rounds the way float32 arithmetic
-  sends it**, not by any rule in script coordinates. `snapUnits()` replays
-  the RTX 4070Ti's vertex path (projection with the half-pixel offset in it,
-  a separate multiply and add for the viewport, round half to even) with the
-  monitor's width for x and height for y, so the same value can round up on
-  a 96-wide monitor and down on a 64-wide one. It was fitted to card G
-  (1418 ties on eight sizes, none wrong). Do not replace it with
-  `Math.round`: that is what the Apple M5 does for x only, and PhySim
-  follows Windows, where most players are. The Mac's y ties fit no model yet
-  (`doc/ingame-findings.md` section 10).
-
-`strokeLine` works in integers of 1/256px so every tie is exact; endpoints
-beyond ±65536px are clipped first to keep the products inside 2^53. Fill ties
-are carried symbolically (the `ySign` rules in `fillConvex`), not by adding
-an epsilon to the coordinates.
-
-`test/ingame.test.mjs` runs each verification card page (the `.lua` file
-itself, in fengari via `test/helpers/cardRunner.mjs`) through `raster.js` and
-`pixelFont.js` and compares against `test/fixtures/ingame-raster.json`, the
-lit pixels of 86 screenshot pages. A page's key also names its monitor
-(`tools/ingame/analysis/screen.mjs`): `D4` is a 3x3 (96x96), `E2_5x3` page
-E2 on a 5x3 (160x96); card E's pages cover every size from 1x1 to 9x5, and
-the rules hold unchanged on all of them. To extend it, add a page to
-`tools/ingame/verify*.lua`, shoot it on the monitor, convert to PNG
-(`sips -s format png`, named like the key), add it to `PAGES` in
-`tools/ingame/analysis/export-fixture.mjs` and run it
-(`<macDir> <winDir> <out.json>`); it refuses a page whose mean calibration
-residual is over 0.1px or whose two platforms disagree — except the tie
-pages (F3, G1-G3, `TIE_PAGES`), which take the RTX 4070Ti shot and print how
-far the Apple M5 one is from it. Card G is read with
-`tools/ingame/analysis/ties.mjs <shot.png>`, which lists each tie's direction
-and its distance from `snapUnits()`. Nothing is masked:
-the green rulers and labels stay under the brightness threshold.
-
-Fit changes to the screenshots, never to another monitor emulator: the rules
-here came out of the game itself, and ported rules have been wrong before.
-
-Compositing, the font and TEXTBOX follow the game too (see
-`doc/ingame-findings.md`): `blend.js` applies the blend weights to **alpha as
-well**, and the monitor shows rgb × alpha — the `.monitor-canvas` black
-background does that multiplication, so keep it black. A frame starts from
-transparent black (0,0,0,0), not opaque, and CLEAR replaces the buffer with
-the colour *and* its alpha. `plotter()` does not de-duplicate:
-overlapping edges double-blend in the game as well. TEXTBOX wraps by
-character count and keeps its spaces (`pixelFont.js:wrapTextBox`).
-
-## Monitor rendering cost
-
-`mcScreen.js` draws into an `ImageData` through a `Uint32Array` view and
-uploads each monitor with one `putImageData` at the end of the frame. Do not
-"simplify" this back into canvas 2D calls: `ctx.fillRect(x, y, 1, 1)` per
-pixel measured **6-7x slower** on the same frames (a 500-command frame went
-from 0.45 ms to 2.9 ms in an A/B on one page), which is what made the panel
-eat a core during monitor simulation. Everything the rasterisers and the
-bitmap font hand back is a pixel or a run, so the buffer is the natural
-target; the canvas is only the upload surface.
-
-Two consequences to keep in mind:
-
-- The buffer writers clip themselves. The canvas used to do that for free, and
-  a raw write at x = -1 lands on the *previous row* instead of being dropped.
-- Repaints are coalesced into one `requestAnimationFrame` (`scheduleRepaint`).
-  Frames arrive at the simulator's cadence, not the display's, and only the
-  newest matters. This is also what keeps a hidden panel from painting:
-  `retainContextWhenHidden` means the webview still receives every frame
-  message while hidden, but rAF doesn't run, so nothing is drawn until it
-  comes back.
+- With the setting on, the window opens on the first powered-on `screenConfig` of a run, not with the panel.
+- Closing it by hand replays the screens into the panel and sets `monitorWindowDismissed`, so the next `screenConfig` doesn't reopen it; `simulatorStarted()` (each run) clears that. Turning the setting off closes it without counting as a dismissal.
 
 ## Simulation speed
 
-The toolbar's ×1 / ×0.5 / ×0.25 / ×0.1 stretches the **real time a tick
-takes**, never what a tick contains: velocities stay m/tick, CH13/14 keep ×60
-(game seconds). Both clocks are scaled together, or the microcontroller would
-see a position moving at a different rate than the velocity channels say:
+The toolbar's ×1 / ×0.5 / ×0.25 / ×0.1 stretches the **real time a tick takes**, never what a tick contains: velocities stay m/tick, CH13/14 keep ×60 (game seconds). Both clocks are scaled together, or the microcontroller would see a position moving at a different rate than the velocity channels say:
 
 - the webview integrator (`simulation.js`'s `tickDtMs`);
-- LifeBoatAPI's Lua main loop. `PhysServer` sends `RATE|<ticks/s>` on the
-  14239 socket (on change and on every connect — Lua starts at 60 Hz), and
-  `PhySim.lua` writes `simulator._timePerFrame` in `injectAsInputs`, the only
-  place it is handed `simulator`. Not `setFrameRate()` / `TICKRATE`: both also
-  reset LifeBoatAPI's frame skip. This one path works on Windows with the real
-  exe too, which is why it doesn't go through `SimStubServer`.
+- the engine worker's tick loop (`worker.ts`: `TICK_MS / timeScale`), which also tells the runner the rate so `PhySim:tickRate()` reports 60 × scale.
 
-Lua goes back to 60 Hz when the socket closes, on `phys:close()`, and when the
-panel is disposed (the host sends ×1). Slow-down only: above 60 Hz
-LifeBoatAPI's loop falls behind silently (it resets `timeSinceFrame` instead
-of catching up). The speed is saved in `workspaceState` (`physim.timeScale`)
-and the dropdown turns yellow off ×1, so a leftover setting can't pass for
-slow user code. The clocks are not phase-locked — a Lua tick can see 0 or 2
-webview ticks, same as at 60 Hz. There is no single-step: `RATE` is only read
-inside a Lua tick, so a stopped Lua loop couldn't be woken again.
+This no longer depends on the script: 1.x sent `RATE` over the socket and `PhySim.lua` poked LifeBoatAPI's `simulator._timePerFrame` from `injectAsInputs`, so a script without it ran at 60 Hz. The speed is saved in `workspaceState` (`physim.timeScale`), applied when the panel opens, reset to ×1 when the panel is disposed, and the dropdown turns yellow off ×1 so a leftover setting can't pass for slow user code. Slow-down only (`TIME_SCALES` has nothing above 1). The clocks are not phase-locked — a script tick can see 0 or 2 webview ticks, same as at 60 Hz. There is no pause or single-step in the panel; the debugger's breakpoints are the way to stop the script.
 
 ## Coordinate / sign conventions
 
@@ -354,31 +267,53 @@ inside a Lua tick, so a stopped Lua loop couldn't be woken again.
 - Rotations are Three.js `Euler XYZ` intrinsic, in radians. CH4-6 expose these directly. The local-axis decomposition formulas in `PhySim.lua:injectAsInputs` and `media/channels.js:deriveChannels` assume this order — changing it breaks tilt and compass.
 - The airplane mesh's wing-tip lights are placed by visual convention (red on +X), not strict aviation port=red. Variable names are `redTip`/`greenTip` to reflect this.
 
-## When changing the protocol or channels
+## When changing the pose or channels
 
 Touch all of these in lockstep, or things will silently desync:
 1. `media/messaging.js` — `readState()`; `media/channels.js` — `deriveChannels()`; `media/dom.js` — `refreshChannelTable()`; table rows in `media/panel.html` if adding a CH
-2. `src/physServer.ts` — `encode()` field order, `PhysState` type
-3. `lua/PhySim.lua` — message parsing in `update()`, channel writes in `injectAsInputs()`
-4. `test/` — `protocol.test.mjs` (field order), `channels.test.mjs` (golden vectors), `parity.test.mjs` (JS⇄Lua vectors)
-
+2. `src/engine/physState.ts` — `PhysState`, `sanitizePhysState`; `src/engine/runner.ts` — the `__physim_host.phys` binding's value order
+3. `lua/PhySim.lua` — `update()` (the order it unpacks `_host.phys()`), channel writes in `injectAsInputs()`
+4. `test/` — `channels.test.mjs` (golden vectors), `parity.test.mjs` (JS⇄Lua vectors), `roundtrip.test.mjs` (pose → channels on the engine)
 5. `media/csv.js` — `CSV_COLUMNS` and `csvRow()` (the CSV log's shape; `test/csv.test.mjs` pins the width and a golden row)
+6. `src/agent/scenario.ts` — `SCENARIO_COLUMNS` (it reads CH1–12 back out of that log by name); `src/agent/tools.ts` — `set_pose` and the pose in answers
 
-`README.md` (Japanese, the one GitHub shows) / `doc/README_en.md` also need updating for any new CH.
+The READMEs also need updating for any new CH — while 2.x is a pre-release that means `doc/next/README.md` (Japanese) and `doc/next/README_en.md`, see "Where the 2.x README lives".
 
 ## Localisation (English / Japanese)
 
 User-facing host text is translated; the webview panel is not.
 
 - `package.json` settings descriptions and command titles are `%key%` placeholders. English lives in `package.nls.json`, Japanese in `package.nls.ja.json`. A new setting or command needs a key in **both**. `displayName` and the settings section title stay literal (product name).
-- Notifications and dialog titles in `src/` go through `vscode.l10n.t("English text {0}", arg)` — the English string *is* the key, so editing it orphans the entry in `l10n/bundle.l10n.ja.json`; update both together. Button labels (e.g. "Open", "Start logging") are deliberately left in English. Output-channel `log()` lines stay English.
-- `vscode.l10n` is why `engines.vscode` is `^1.73.0`.
+- Notifications and dialog titles in `src/` go through `vscode.l10n.t("English text {0}", arg)` — the English string *is* the key, so editing it orphans the entry in `l10n/bundle.l10n.ja.json`; update both together. Button labels are mixed: the build's "Copy to Clipboard" / "Open" and "Show Log" go through `l10n.t`, the CSV log's "Open" and "Start logging" are literal English. Output-channel `log()` lines and Debug Console text stay English.
 - `test/l10n.test.mjs` fails on a missing or orphaned key in either mechanism. It finds `l10n.t()` strings by regex, so the first argument must be a plain double-quoted literal.
+
+## Where the 2.x README lives
+
+**While 2.x is a pre-release, the user-facing documents at their usual paths are the 1.x ones and must be left alone**: `README.md`, `doc/README_en.md` and `CHANGELOG.md` are byte-for-byte what 1.2.1 shipped. Stable users are still on 1.2.1, and those are the files GitHub and the Marketplace show them. (The maintainer's instruction, 2026-11-13.)
+
+The 2.x versions live beside them in `doc/next/`: `README.md` (Japanese), `README_en.md`, `CHANGELOG.md`. **Edit those.** Each opens with a one-line note saying what it is; when 2.x is released, the three files move to their usual paths (replacing the 1.x ones), the notes come out, the language links at the top go back to the absolute GitHub URLs, and `README_en.md`'s link to the changelog becomes `../CHANGELOG.md` again.
+
+One consequence to keep in mind: `.vscodeignore` leaves `doc/` out of the `.vsix`, so **a pre-release build carries the 1.x README** — a pre-release user reading the extension's page in VSCode sees 1.x instructions (LifeBoatAPI required, and so on). Whether to accept that or to swap the files in at packaging time is the maintainer's call and has not been decided.
+
+Japanese text in `doc/next/` is written without half-width spaces between Japanese and English words (the maintainer's choice, also 2026-11-13); the 1.x files keep the spaces they were published with.
 
 ## Distribution
 
-The extension is published on the VS Code Marketplace as `shannon-toppo.physim` (first published 2026-09-24; the `"preview"` flag was dropped in 1.2.0). LifeBoatAPI is pulled from the Marketplace too, via `extensionDependencies`.
+The extension is published on the VS Code Marketplace as `shannon-toppo.physim` (first published 2026-09-24; the `"preview"` flag was dropped in 1.2.0). Since 2.0.0 it has no `extensionDependencies`. The one runtime dependency, `@stormcat-works/storm-lua-engine`, is packaged from `node_modules/`: `.vscodeignore` excludes `node_modules/**` and re-includes the engine's `package.json`, license files and `dist/**/*.js|*.wasm|package.json`; `scripts/check-package.mjs` fails if any of the runtime/compiler WASM files or `out/engine/*.js` is missing.
+
+`engines.vscode` is `^1.101.0` because the engine package asks for Node ≥ 22.18 — see "Open items".
 
 Releases are uploaded by hand: `npx vsce package`, then upload the `.vsix` at https://marketplace.visualstudio.com/manage (the extension's "…" menu → Update). Marketplace refuses a version it already has, so bump `version` in `package.json` for every release. CI runs `npm run check:package` on the file list; it only sees tracked files, so check `npx vsce ls` for stray untracked ones before packaging locally. The same `.vsix` can also be attached to a GitHub Release.
 
 There is no `vsce publish` from the CLI or CI yet. Azure DevOps retires global PATs on 2026-12-01, so don't set one up; automating this means `vsce publish --azure-credential` (vsce >= 2.26.1) with a user-assigned managed identity federated to GitHub Actions. The locally resolved vsce is 2.15.0, which is too old for that flag.
+
+## Open items (2.0.0)
+
+- **`input.*` inside `onDraw`.** The engine returns 0 there; whether Stormworks does is unmeasured. If the game returns the live value, scripts that read inputs while drawing show zeros only in PhySim; if the game raises an error there (the maintainer recalls it doing so — a memory, not a measurement), PhySim silently runs scripts the game would stop. Needs an in-game check before release: card H (`tools/ingame/verifyH_phase.lua`, described in `tools/ingame/README.md`) is written for it and has not been run in the game yet.
+
+- **Minimum VSCode.** Which VSCode release first ships an extension-host Node ≥ 22.18 (the engine's `engines.node`) has not been verified; `^1.101.0` is a placeholder until it is.
+- **Nothing has been run in a real VSCode window yet.** Implemented but unchecked: the webview painting `screenPixels` frames, the debug UI (breakpoints, stepping, Variables, hover, Debug Console source links), the F6/F7 keybindings and the editor-title Run/Stop buttons, the configuration provider on F5, `saveAll` before run/build, the build notifications and Problems view, the `.vsix` contents loading the WASM after installation.
+- **Platforms.** Only macOS/Node tests have been run. Windows and Linux are expected to work (no per-OS code), and CI's matrix covers all three for the Node tests, but nothing has been checked in VSCode there.
+- **AI tools (beta).** Stage 1 works from a real agent (Claude Code, macOS, confirmed by the user on 2026-11-12). Stage 2, the panel mirror, works in a real window too (monitors and gizmo following the agent, macOS, confirmed by the user on 2026-11-13). Unchecked: the named-pipe path on a real Windows machine, and either stage on Windows/Linux or from an installed `.vsix`.
+- **Buttons and sliders.** The `Controls` block below the monitors (`media/controls.js`) is covered only up to the host: the webview drawing it, pointer capture on a held button, the block following the monitor window, and the read-only display of an agent's controls have not been tried in a window. Neither has the toolbar's wrapping (`#toolbar` in `panel.css`: `flex-wrap`, no-break labels, the hint cut with an ellipsis, and below 760px replaced by a "?" whose bubble — CSS only, on hover or focus — shows the same text).
+- **F6/F7 collide with LifeBoatAPI** when both are installed. No `when` clause can see the other extension, so it is the user's choice: `physim.keybindings.useF6F7` off, and Shift+F6 / Shift+F7 instead. That the `config.` context key really disables the bindings has not been checked in a window.

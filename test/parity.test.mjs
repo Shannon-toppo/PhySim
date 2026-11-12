@@ -3,13 +3,15 @@
 // The formulas exist twice by necessity: media/channels.js (webview display)
 // and lua/PhySim.lua:injectAsInputs (sandbox — cannot share code with JS).
 // This suite runs both implementations over the same input vectors and
-// asserts the outputs agree. fengari computes with JS doubles, so the two
-// sides should agree to ~1e-9 comfortably.
+// asserts the outputs agree: the state goes in through the stubbed
+// `__physim_host.phys()`, PhySim:update() reads it (and wraps the angles), and
+// injectAsInputs writes the channels to a capturing fake simulator. fengari
+// computes with JS doubles, so the two sides should agree to ~1e-9 comfortably.
 //
 // Extend VECTORS whenever the CH13–17 math changes.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveChannels } from "../media/channels.js";
+import { deriveChannels, normalizeAngle } from "../media/channels.js";
 import { LuaPhySim } from "./helpers/luaRunner.mjs";
 
 const TOL = 1e-9;
@@ -44,9 +46,12 @@ test("CH13–17: JS deriveChannels matches Lua injectAsInputs", () => {
   const sim = new LuaPhySim();
   for (const v of VECTORS) {
     const state = { position: [0, 0, 0], ...v };
-    const js = deriveChannels(state);
+    // The webview reports normalised angles and PhySim:update() normalises the
+    // ones it reads, so the JS side is fed the same. Without it ry=±180° lands
+    // on either side of the compass' ±0.5 seam depending on rounding.
+    const js = deriveChannels({ ...state, rotation: state.rotation.map(normalizeAngle) });
 
-    sim.setState(state);
+    sim.feedAndUpdate(state);
     const ch = sim.injectAsInputs(1);
 
     const pairs = [
@@ -73,7 +78,7 @@ test("CH1–12 raw passthrough honours startCh offset", () => {
     velocity: [4, 5, 6],
     angularVelocity: [0.4, 0.5, 0.6]
   };
-  sim.setState(state);
+  sim.feedAndUpdate(state);
   const ch = sim.injectAsInputs(5); // startCh = 5 → raw values live at 5..16
   const raw = [...state.position, ...state.rotation, ...state.velocity, ...state.angularVelocity];
   raw.forEach((v, i) => {

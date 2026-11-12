@@ -1,63 +1,56 @@
-// Microcontroller monitor rendering.
+// Microcontroller monitor display.
 //
-// Normally the LifeBoatAPI simulator draws the MC's screens in its own
-// STORMWORKS_Simulator.exe window. That exe is Windows-only, so on macOS the
-// extension host always stands in for it (src/simStubServer.ts) — and on
-// Windows it can be asked to, via the experimental
-// `physim.monitors.useBuiltInOnWindows` setting. Either way the host forwards
-// two messages here:
+// The microcontroller's Lua runs in a worker thread of the extension host on
+// Storm Lua Engine (src/engine/), which rasterises every monitor itself. What reaches
+// this page is finished pictures, not draw calls:
 //
-//   {type:"screenConfig", screens:[{number,width,height,poweredOn,portrait}]}
-//   {type:"screenFrame",  commands:[["RECT",1,1,0,0,32,32], ...]}
+//   {type:"screenConfig", screens:[{number,width,height,poweredOn,portrait,size}]}
+//   {type:"screenPixels", frames:[{screen,width,height,pixels}]}
+//
+// `pixels` is the engine's "game-rgba8" frame for one monitor: width*height*4
+// bytes of R,G,B,A in row order. Only monitors whose picture changed are
+// listed; any other monitor keeps the picture it last got.
 //
 // One <canvas> per powered-on screen, sized in *logical* Stormworks pixels
 // (32 per monitor block) and scaled up by CSS with image-rendering:pixelated,
 // so the result looks like the chunky in-game monitor rather than a blurry
 // upscale.
 //
-// There can be several. LifeBoatAPI's simulator runs onDraw once per
-// powered-on screen with `screen.getWidth()/getHeight()` reporting that
-// screen's size, exactly as the game does for a microcontroller wired to more
-// than one monitor, and every draw command carries the screen number. Screens
-// normally come from the script's own `simulator:setScreen` calls; the header
-// controls here declare extra ones, which the host turns into the SCREENSIZE /
-// SCREENPOWER commands Lua already understands (see media/monitorConfig.js and
-// src/simStubServer.ts). Panel-declared screens lose to the script's own
-// setScreen for the same number.
+// There can be several: the engine runs onDraw once per powered-on screen
+// with `screen.getWidth()/getHeight()` reporting that screen's size, exactly
+// as the game does for a microcontroller wired to more than one monitor.
+// Screens normally come from the script's own `simulator:setScreen` calls;
+// the header controls here declare extra ones, which the host adds to the
+// engine's screen list (see media/monitorConfig.js and src/engine/screens.ts).
+// Panel-declared screens lose to the script's own setScreen for the same
+// number.
 //
-// The exe clears the screen between rendered frames and the MC's onDraw
-// repaints from scratch every frame, so each screenFrame starts from black.
+// How a frame is shown. "game-rgba8" is the game's own 4-channel buffer, not
+// premultiplied RGBA: the engine blends alpha with the same weights as the
+// colour (docs/specs/screen.md, "RGBAとフレームの寿命", in storm-lua-engine
+// v0.4.1), so rgb > alpha is a normal pixel, and a frame starts from
+// transparent black. The spec's CanvasPresenter copies the bytes into an
+// ImageData unchanged — no alpha correction, no gamma — and so does this
+// file. ImageData is straight (non-premultiplied) RGBA, which is exactly what
+// the bytes are, so nothing has to be converted on the way in. What the
+// monitor *shows* is rgb × alpha (doc/ingame-findings.md, D9 and B4): the
+// canvas composites the straight-alpha pixel over its CSS background, and
+// .monitor-canvas's black background (panel.css) is what turns that into the
+// multiplication. Keep it black.
 //
-// Everything draws into an ImageData buffer through a Uint32Array view, and
-// each monitor is uploaded with a single putImageData at the end of the
-// frame. The obvious implementation — ctx.fillRect(x, y, 1, 1) per pixel —
-// is what made monitor simulation eat a core: an A/B of the two on the same
-// frames put it 6-7x slower (500 commands: 2.85 ms vs 0.45 ms), and in the
-// visible panel a 500-command frame cost 11.6 ms, i.e. 70% of a core at
-// 60 Hz. Of the surviving 0.45 ms, the clear and the upload are 0.01 ms
-// between them — the rest is the rasterisers. See doc/worklog.md.
-//
-// Repaints are coalesced into one animation frame (scheduleRepaint). TICKEND
-// arrives ~60x a second and used to repaint synchronously from the message
-// handler, so bursts painted more often than the display could show — and a
-// panel in a background tab kept painting canvases nobody could see, because
-// retainContextWhenHidden keeps the webview receiving messages while hidden.
+// Repaints are coalesced into one animation frame (scheduleRepaint). Frames
+// arrive at the simulator's cadence, not the display's, and only the newest
+// one per monitor is worth uploading. A panel in a background tab keeps
+// receiving messages (retainContextWhenHidden) but rAF doesn't run there, so
+// it uploads nothing until it is visible again.
 
 import {
-  monitorsSection, monitorsList, monitorZoomEl, monitorTrueColourEl, monitorAddEl
+  monitorsSection, monitorsList, monitorZoomEl, monitorAddEl
 } from "./monitorDom.js";
 import { sendTouch, sendScreenSet, sendScreenRemove } from "./monitorMessaging.js";
 import {
   SCREEN_SIZES, DEFAULT_SIZE, MAX_SCREENS, nextScreenNumber, pixelsToSize, fitScale
 } from "./monitorConfig.js";
-import {
-  drawPixelText, layoutTextBox
-} from "./pixelFont.js";
-import {
-  strokeLine, strokeCircle, fillCircle, strokeTriangle, fillTriangle,
-  strokeRectangle, fillRectangle
-} from "./raster.js";
-import { packColour, blendPixel } from "./blend.js";
 
 /**
  * @typedef {object} ScreenInfo
@@ -69,14 +62,23 @@ import { packColour, blendPixel } from "./blend.js";
  * @property {string} [size] block size, e.g. "3x3"; derived when absent
  */
 
-/** One parsed draw call: [COMMAND, ...params]. @typedef {(string|number)[]} DrawCommand */
+/**
+ * One monitor's picture as the host posts it. `pixels` is typed loosely on
+ * purpose: what survives the webview's message transfer is checked by
+ * frameBytes() before anything trusts it.
+ * @typedef {object} ScreenFrame
+ * @property {number} screen
+ * @property {number} width
+ * @property {number} height
+ * @property {unknown} pixels
+ */
 
 /**
  * @typedef {object} Monitor
  * @property {HTMLCanvasElement} canvas
  * @property {CanvasRenderingContext2D} ctx
- * @property {ImageData} img the pixel buffer every draw call writes into
- * @property {Uint32Array} u32 one word per pixel, a view over img.data
+ * @property {ImageData} img the upload buffer, reused for every frame
+ * @property {Uint8Array | null} pending the newest frame not yet uploaded
  * @property {HTMLElement} name the "Screen 1 - 96x96 - 4x" caption
  * @property {HTMLSelectElement} sizeEl
  * @property {HTMLInputElement} portraitEl
@@ -86,10 +88,6 @@ import { packColour, blendPixel } from "./blend.js";
 /** @type {Map<number, Monitor>} */
 const monitors = new Map();
 
-// Text is rasterised from the hand-drawn 4x5 bitmap font in pixelFont.js, one
-// buffer word per lit pixel. Canvas fillText at 5px would anti-alias into
-// grey mush that the integer CSS upscale then magnifies into unreadable blobs.
-
 /**
  * @param {string | number | undefined} v
  * @returns {number}
@@ -98,79 +96,6 @@ function n(v) {
   const x = typeof v === "number" ? v : parseFloat(String(v ?? ""));
   return Number.isFinite(x) ? x : 0;
 }
-
-/**
- * @param {number} v
- * @returns {number}
- */
-function clamp255(v) {
-  return v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
-}
-
-// LifeBoatAPI gamma-corrects every colour in Lua before it reaches us
-// (Simulator_ScreenAPI.lua: `255 * ((c/255) / 0.85) ^ (1/2.4)`) to replicate
-// what the game does to monitor colours. It lifts dark tones hard — a
-// setColor of 30 arrives as 112, and anything from 217 up clips to white — so
-// the panel looks washed out on purpose. "True colour" undoes exactly that and
-// shows the values the microcontroller actually passed to screen.setColor.
-// Off by default: the washed-out rendering is the faithful one.
-//
-// The correction is applied unclamped on the Lua side, so the inverse is
-// lossless: 255 leaves as 272.9 and comes back as 255.
-
-const GAMMA_A = 0.85;
-const GAMMA_Y = 2.4;
-
-/** Whether to undo LifeBoatAPI's gamma correction before drawing. */
-let trueColour = false;
-
-/**
- * @param {number} c gamma-corrected channel value as sent by LifeBoatAPI
- * @returns {number} the raw screen.setColor value
- */
-function unGamma(c) {
-  return c <= 0 ? 0 : 255 * GAMMA_A * Math.pow(c / 255, GAMMA_Y);
-}
-
-/**
- * A draw colour resolved for the pixel buffer. `packed` is the ready-to-store
- * word for the common opaque case; the channels are kept for the blend path.
- * The packed word carries alpha 255 — the source alpha in `a` is what
- * blendPixel() weighs the colour by, and what CLEAR stores as it is.
- * @typedef {object} Colour
- * @property {number} packed
- * @property {number} r
- * @property {number} g
- * @property {number} b
- * @property {number} a 0-255
- */
-
-/**
- * Alpha is not gamma-corrected on the Lua side, so it is passed through.
- * @param {number} r @param {number} g @param {number} b @param {number} a
- * @returns {Colour}
- */
-function makeColour(r, g, b, a) {
-  if (trueColour) { r = unGamma(r); g = unGamma(g); b = unGamma(b); }
-  const cr = clamp255(r), cg = clamp255(g), cb = clamp255(b);
-  return { packed: packColour(cr, cg, cb, 255), r: cr, g: cg, b: cb, a: clamp255(a) };
-}
-
-/**
- * What every pixel is before a frame's first draw: transparent black, alpha
- * included. It shows as black through the canvas background, but a
- * translucent draw onto it keeps a low alpha — white a=128 shows as 32, not
- * 96 (D9 in doc/ingame-findings.md).
- */
-const FRESH = packColour(0, 0, 0, 0);
-/** Frame-start colour. Never gamma-mapped — it is our default, not the MC's. */
-const WHITE = { packed: packColour(255, 255, 255, 255), r: 255, g: 255, b: 255, a: 255 };
-const DEFAULT_OCEAN = { packed: packColour(20, 40, 90, 255), r: 20, g: 40, b: 90, a: 255 };
-
-/** Current draw colour, set by COLOUR and used until the next one. */
-let colour = WHITE;
-/** MAP is a placeholder fill; MAPOCEAN gives it a plausible colour. */
-let oceanColour = DEFAULT_OCEAN;
 
 // --- Scaling ---------------------------------------------------------------
 //
@@ -459,18 +384,19 @@ export function applyScreenConfig(screens) {
   // a monitor is on screen; panel.css keys both off this class.
   document.body.classList.toggle("no-monitors", monitors.size === 0);
   monitorAddEl.disabled = monitors.size >= MAX_SCREENS;
-  // Screen 1 is LifeBoatAPI's own default and the only one whose touch and
-  // size reach the composite inputs (Simulator._simulateDefaultInputs), so
-  // removing it would leave a session no script can talk to.
+  // Screen 1 is the default monitor (LifeBoatAPI's too) and the only one whose
+  // touch and size reach the composite inputs (the prelude's per-tick
+  // defaults, src/engine/prelude.ts), so removing it would leave a run no
+  // script can talk to.
   for (const [num, m] of monitors) {
     const remove = m.canvas.parentElement?.querySelector(".monitor-remove");
     if (remove instanceof HTMLButtonElement) remove.disabled = num === 1;
   }
   // After unhiding, monitorsList finally has a real clientWidth for "fit".
   relayout();
-  // A resized or newly powered-on screen starts black; repaint the frame we
-  // already have instead of waiting for the next TICKEND.
-  scheduleRepaint();
+  // No repaint here. A monitor that kept its size keeps its picture, and a
+  // new or resized one has none to show until a frame of its new size
+  // arrives — the old picture would not fit it.
 }
 
 /**
@@ -524,17 +450,17 @@ function createMonitor(num, w, h, info) {
 
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("PhySim panel: 2D canvas context unavailable");
+  // A fresh canvas is transparent black, which is also what an engine frame
+  // starts from, so the monitor reads as blank until its first frame.
   const img = ctx.createImageData(w, h);
-  const u32 = new Uint32Array(img.data.buffer);
-  u32.fill(FRESH);
-  ctx.putImageData(img, 0, 0);
 
   wrapper.appendChild(label);
   wrapper.appendChild(canvas);
   monitorsList.appendChild(wrapper);
 
   attachTouch(canvas, num);
-  const m = { canvas, ctx, img, u32, name, sizeEl, portraitEl, info };
+  /** @type {Monitor} */
+  const m = { canvas, ctx, img, pending: null, name, sizeEl, portraitEl, info };
   syncControls(m);
 
   // The host is what actually changes anything; the controls only ask. It
@@ -581,24 +507,48 @@ monitorAddEl.addEventListener("click", () => {
   sendScreenSet({ screen, size: DEFAULT_SIZE, portrait: false, poweredOn: true });
 });
 
-// --- Frame replay ----------------------------------------------------------
+// --- Frames ----------------------------------------------------------------
 
 /**
- * The last frame's draw calls, kept so a rendering setting (true colour) can
- * repaint what is already on screen instead of waiting for the next tick —
- * which never comes if the simulated microcontroller is paused.
- * @type {DrawCommand[]}
+ * The bytes of a posted frame, whatever shape the message transfer left them
+ * in: the host posts a Uint8Array, but a structured clone may hand over
+ * another view type or the bare ArrayBuffer. Anything else is not a frame.
+ * @param {unknown} pixels
+ * @returns {Uint8Array | null}
  */
-let lastCommands = [];
+function frameBytes(pixels) {
+  if (pixels instanceof Uint8Array) return pixels;
+  if (ArrayBuffer.isView(pixels)) {
+    return new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength);
+  }
+  if (pixels instanceof ArrayBuffer) return new Uint8Array(pixels);
+  return null;
+}
 
 /**
- * Take one frame's accumulated draw calls. The repaint itself waits for the
+ * Take the pictures of the monitors that changed. The upload waits for the
  * next animation frame — see scheduleRepaint.
- * @param {DrawCommand[]} commands
+ *
+ * A frame is dropped, not stretched or cropped, when it doesn't fit the
+ * monitor it names. That happens legitimately: a frame drawn just before a
+ * resize can arrive after the screenConfig that resized the canvas, and the
+ * next frame at the new size replaces it anyway.
+ * @param {ScreenFrame[]} frames
  */
-export function applyScreenFrame(commands) {
-  lastCommands = Array.isArray(commands) ? commands : [];
-  scheduleRepaint();
+export function applyScreenPixels(frames) {
+  let changed = false;
+  for (const f of frames) {
+    if (!f || typeof f !== "object") continue;
+    const m = monitors.get(Math.round(n(f.screen)));
+    if (!m) continue;
+    const w = m.canvas.width, h = m.canvas.height;
+    if (n(f.width) !== w || n(f.height) !== h) continue;
+    const bytes = frameBytes(f.pixels);
+    if (!bytes || bytes.byteLength !== w * h * 4) continue;
+    m.pending = bytes;
+    changed = true;
+  }
+  if (changed) scheduleRepaint();
 }
 
 /** Whether a repaint is already booked for the next animation frame. */
@@ -608,11 +558,11 @@ let repaintPending = false;
  * Book a repaint for the next animation frame, at most one per frame.
  *
  * Frames arrive from the simulator at its own cadence, not the display's, and
- * only the newest one is worth drawing — lastCommands already holds it. This
- * also means a hidden panel does no drawing at all: the webview keeps
- * receiving messages while hidden (retainContextWhenHidden), but rAF doesn't
- * run, so the work is skipped and resumes with the latest frame on the
- * callback that fires when the panel comes back.
+ * only the newest one per monitor is worth uploading — `pending` already
+ * holds it. This also means a hidden panel does no drawing at all: the
+ * webview keeps receiving messages while hidden (retainContextWhenHidden),
+ * but rAF doesn't run, so the work is skipped and resumes with the latest
+ * frames on the callback that fires when the panel comes back.
  */
 function scheduleRepaint() {
   if (repaintPending) return;
@@ -624,211 +574,14 @@ function scheduleRepaint() {
 }
 
 function repaint() {
-  if (monitors.size === 0) return;
-  for (const m of monitors.values()) m.u32.fill(FRESH);
-  colour = WHITE;
-  for (const c of lastCommands) {
-    if (Array.isArray(c)) draw(c);
-  }
-  for (const m of monitors.values()) m.ctx.putImageData(m.img, 0, 0);
-}
-
-monitorTrueColourEl.addEventListener("change", () => {
-  trueColour = monitorTrueColourEl.checked;
-  scheduleRepaint();
-});
-
-/**
- * @param {number} index
- * @returns {Monitor | null}
- */
-function monitorFor(index) {
-  return monitors.get(Math.round(index)) ?? null;
-}
-
-/** @param {DrawCommand} c */
-function draw(c) {
-  const cmd = String(c[0]);
-
-  if (cmd === "COLOUR") { colour = makeColour(n(c[1]), n(c[2]), n(c[3]), n(c[4])); return; }
-  if (cmd === "MAPOCEAN") { oceanColour = makeColour(n(c[1]), n(c[2]), n(c[3]), n(c[4])); return; }
-  if (cmd === "MAPSHALLOWS" || cmd === "MAPLAND" || cmd === "MAPGRASS" ||
-      cmd === "MAPSAND" || cmd === "MAPSNOW") return;   // no terrain data to tint
-
-  const m = monitorFor(n(c[1]));
-  if (!m) return;
-  const canvas = m.canvas;
-
-  switch (cmd) {
-    case "CLEAR":
-      // Replaces, whatever the alpha: the buffer takes the colour and its
-      // alpha as they are, and the black behind the canvas shows through
-      // (B4 in doc/ingame-findings.md).
-      m.u32.fill(packColour(colour.r, colour.g, colour.b, colour.a));
-      return;
-
-    case "MAP":
-      // No terrain data here; a flat ocean fill at least shows the map is live.
-      fillRect(m, 0, 0, canvas.width, canvas.height, oceanColour);
-      return;
-
-    case "LINE":
-      strokeLine(plotter(m), n(c[2]), n(c[3]), n(c[4]), n(c[5]), canvas);
-      return;
-
-    case "CIRCLE": {
-      const fill = n(c[2]) === 1;
-      if (fill) fillCircle(runner(m), n(c[3]), n(c[4]), n(c[5]), canvas);
-      else strokeCircle(plotter(m), n(c[3]), n(c[4]), n(c[5]), canvas);
-      return;
-    }
-
-    case "RECT": {
-      // The game's outline is four lines, so it spans w+1 by h+1 pixels —
-      // not the w by h a filled rectangle covers.
-      const fill = n(c[2]) === 1;
-      const v = [n(c[3]), n(c[4]), n(c[5]), n(c[6])];
-      if (fill) fillRectangle(runner(m), v[0], v[1], v[2], v[3], canvas);
-      else strokeRectangle(plotter(m), v[0], v[1], v[2], v[3], canvas);
-      return;
-    }
-
-    case "TRIANGLE": {
-      const fill = n(c[2]) === 1;
-      const v = [n(c[3]), n(c[4]), n(c[5]), n(c[6]), n(c[7]), n(c[8])];
-      if (fill) fillTriangle(runner(m), v[0], v[1], v[2], v[3], v[4], v[5], canvas);
-      else strokeTriangle(plotter(m), v[0], v[1], v[2], v[3], v[4], v[5], canvas);
-      return;
-    }
-
-    case "TEXT": {
-      drawPixelText(pixelSetter(m), String(c[4] ?? ""), n(c[2]), n(c[3]));
-      return;
-    }
-
-    case "TEXTBOX": {
-      drawTextbox(
-        m, n(c[2]), n(c[3]), n(c[4]), n(c[5]),
-        n(c[6]), n(c[7]), String(c[8] ?? "")
-      );
-      return;
-    }
-
-    default:
-      return;
-  }
-}
-
-// --- Pixel writers ----------------------------------------------------------
-//
-// All four of these take the *current* colour at the moment they are created,
-// not per pixel: a colour can only change between draw commands, so binding it
-// once keeps the inner loops free of module-variable reads. Every one clips —
-// the canvas used to do that for free, but a raw buffer write with a negative
-// x would silently land on the previous row.
-
-/**
- * Fill an axis-aligned rectangle, clipped to the screen.
- * @param {Monitor} m
- * @param {number} x @param {number} y @param {number} w @param {number} h
- * @param {Colour} [col] defaults to the current draw colour
- */
-function fillRect(m, x, y, w, h, col = colour) {
-  const width = m.canvas.width, height = m.canvas.height;
-  const x0 = Math.max(0, x), x1 = Math.min(width, x + w);
-  const y0 = Math.max(0, y), y1 = Math.min(height, y + h);
-  if (x1 <= x0 || y1 <= y0 || col.a === 0) return;
-  const u32 = m.u32;
-  if (col.a === 255) {
-    for (let yy = y0; yy < y1; yy++) {
-      const row = yy * width;
-      u32.fill(col.packed, row + x0, row + x1);
-    }
-    return;
-  }
-  for (let yy = y0; yy < y1; yy++) {
-    const row = yy * width;
-    for (let xx = x0; xx < x1; xx++) {
-      u32[row + xx] = blendPixel(u32[row + xx], col.r, col.g, col.b, col.a);
-    }
-  }
-}
-
-/**
- * A pixel plotter for raster.js. Every call is one draw: where a shape's edges
- * lie on top of each other (a zero-width drawRect is the same line down and
- * back up) a translucent colour blends twice, as it does in the game (B5 in
- * doc/ingame-findings.md). A closed outline never revisits a pixel, so
- * nothing else is affected.
- * @param {Monitor} m
- * @returns {import("./raster.js").Plot}
- */
-function plotter(m) {
-  const width = m.canvas.width, height = m.canvas.height;
-  const u32 = m.u32, col = colour;
-  if (col.a === 255) {
-    const packed = col.packed;
-    return (x, y) => {
-      if (x < 0 || y < 0 || x >= width || y >= height) return;
-      u32[y * width + x] = packed;
-    };
-  }
-  return (x, y) => {
-    if (x < 0 || y < 0 || x >= width || y >= height) return;
-    const i = y * width + x;
-    u32[i] = blendPixel(u32[i], col.r, col.g, col.b, col.a);
-  };
-}
-
-/**
- * Horizontal-run painter for the filled rasterisers. Runs never overlap, so
- * this needs nothing but clipping.
- * @param {Monitor} m
- * @returns {import("./raster.js").FillRun}
- */
-function runner(m) {
-  const width = m.canvas.width, height = m.canvas.height;
-  const u32 = m.u32, col = colour;
-  return (x, y, w) => {
-    if (y < 0 || y >= height) return;
-    const from = Math.max(0, x), to = Math.min(width, x + w);
-    if (to <= from) return;
-    const row = y * width;
-    if (col.a === 255) { u32.fill(col.packed, row + from, row + to); return; }
-    for (let xx = from; xx < to; xx++) {
-      u32[row + xx] = blendPixel(u32[row + xx], col.r, col.g, col.b, col.a);
-    }
-  };
-}
-
-/**
- * A pixel-plotting callback for the bitmap font.
- * @param {Monitor} m
- * @returns {(px: number, py: number) => void}
- */
-function pixelSetter(m) {
-  const width = m.canvas.width, height = m.canvas.height;
-  const u32 = m.u32, col = colour;
-  return (px, py) => {
-    if (px < 0 || py < 0 || px >= width || py >= height) return;
-    const i = py * width + px;
-    u32[i] = col.a === 255 ? col.packed : blendPixel(u32[i], col.r, col.g, col.b, col.a);
-  };
-}
-
-/**
- * hAlign/vAlign are -1/0/1 → left|centre|right and top|middle|bottom, aligned
- * within the box. Wrapping and placement live in pixelFont.js's
- * layoutTextBox(), which follows the game's character-count wrap.
- * @param {Monitor} m
- * @param {number} x @param {number} y @param {number} w @param {number} h
- * @param {number} hAlign @param {number} vAlign
- * @param {string} text
- */
-function drawTextbox(m, x, y, w, h, hAlign, vAlign, text) {
-  const setPixel = pixelSetter(m);
-  for (const line of layoutTextBox(text, x, y, w, h, hAlign, vAlign)) {
-    drawPixelText(setPixel, line.text, line.x, line.y);
+  for (const m of monitors.values()) {
+    if (!m.pending) continue;
+    // Copied as they are: the bytes are already straight RGBA, which is what
+    // ImageData holds. See the top of this file for why no alpha or gamma
+    // step belongs here.
+    m.img.data.set(m.pending);
+    m.pending = null;
+    m.ctx.putImageData(m.img, 0, 0);
   }
 }
 

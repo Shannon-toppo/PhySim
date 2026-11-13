@@ -34,7 +34,10 @@ export const TWO_PI = Math.PI * 2;
 export function normalizeAngle(a) {
   if (!Number.isFinite(a)) return a;
   const w = (a + Math.PI) % TWO_PI;
-  return (w < 0 ? w + TWO_PI : w) - Math.PI;
+  const r = (w < 0 ? w + TWO_PI : w) - Math.PI;
+  // A hair below -π, `w` is a tiny negative number and `w + 2π` rounds to
+  // exactly 2π, which would come out as +π — the one value the range excludes.
+  return r >= Math.PI ? -Math.PI : r;
 }
 
 /**

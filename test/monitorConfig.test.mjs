@@ -1,5 +1,5 @@
 // media/monitorConfig.js — the multi-monitor layout rules shared by the panel
-// controls and (for the size table) src/simStubServer.ts.
+// controls and (for the size table) src/engine/screens.ts.
 import test from "node:test";
 import assert from "node:assert/strict";
 import {

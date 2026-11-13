@@ -11,9 +11,17 @@ Stormworks（v1.15.23）のモニターが、マイクロコントローラー�
 棄却した仮説、測定値の表は [ingame-findings.md](ingame-findings.md) に残してある。
 この文書は、そこから確定した規則だけを取り出したもの。
 
-PhySim の実装は `media/raster.js`（図形）、`media/blend.js`（合成）、
-`media/pixelFont.js`（文字）で、fixture に入れた 86 ページ全部を画素単位で再現する。
-この文書の画素図は、特に断りがない限り `raster.js` / `pixelFont.js` の出力で、
+> **2026-11-12 追記（2.0.0）:** 1.x の PhySim はこの規則を `media/raster.js`（図形）、
+> `media/blend.js`（合成）、`media/pixelFont.js`（文字）で自前に実装していた。2.0.0 では
+> モニターの描画を Storm Lua Engine（`@stormcat-works/storm-lua-engine` 0.4.1）が行い、
+> この3つのファイルは削除した。`test/ingame.test.mjs` は検証カードをエンジンで動かして
+> fixture と比べ、86 ページ全部が画素単位で一致している。規則そのものはゲームの観察で、
+> 実装が変わっても変わらないので、規則の本文は書き換えていない。本文で `raster.js` などに
+> 触れている箇所は 1.x の実装を指す。
+
+1.x の実装（`media/raster.js`・`media/blend.js`・`media/pixelFont.js`）は、fixture に入れた
+86 ページ全部を画素単位で再現していた。この文書の画素図は、特に断りがない限りその
+`raster.js` / `pixelFont.js` の出力で（fixture のページについては 2.0.0 のエンジンも同じ画素を出す）、
 `#` が点灯、`.` が消灯。行頭の数字が y、見出し行が x の一の位。
 
 ## 事実と解釈の区別
@@ -91,7 +99,9 @@ screen = f( f(ndc · f(W/2)) + f(W/2) )             画素中心は +0.5
 x = k + 1/512 は全部下、y = k − 1/512 は全部上になる。幅 96・160 では、x の一部が
 上へずれる（findings 10節に値の一覧）。
 
-`raster.js` の `snapUnits()` がこの計算をしていて、線・塗りの全部の頂点が通る。
+1.x では `raster.js` の `snapUnits()` がこの計算をしていて、線・塗りの全部の頂点が通っていた。
+今はこの式は fixture の読み取りツール `tools/ingame/analysis/ties.mjs` にあり、エンジンの描画が
+それと同じ向きに丸めることを `test/ties.test.mjs` が確かめている。
 
 Apple M5 は違う。x は全部上へ丸め、y は値によって分かれ、合う式はまだ見つかって
 いない。PhySim は Windows に合わせたので、Mac の画面とは、ちょうど中間に乗った頂点で
@@ -580,8 +590,8 @@ B1 のランプの明るさ（`setColor` の値に対する画面の輝度）は
  4 .#..#.###....#..     drawText(0.5, 0, "Ab1")   x は 0 に切り捨て
 ```
 
-グリフの形は `media/pixelFont.js` の `GLYPH_SOURCE` にある。ASCII 以外の文字は
-ゲーム内の Lua エディタに入力できないので、測る必要がない（PhySim は枠だけの箱を
+グリフの形は 1.x では `media/pixelFont.js` の `GLYPH_SOURCE` にあった（今はエンジンの同梱フォント）。
+ASCII 以外の文字はゲーム内の Lua エディタに入力できないので、測る必要がない（PhySim は枠だけの箱を
 描く）。
 
 ### drawTextBox の折り返し
@@ -660,8 +670,9 @@ B7 の左の箱 `drawTextBox(0, 58, 44, 22, "wrap this box now please", 0, 0)`:
    フォームで撮ったページは、1画素でも違えば書き出さずに止まる。頂点を格子の
    ちょうど中間に置いたページ（F3・G）だけは例外で、Windows の撮影を使い、Mac との
    差を表示する（1節）。
-5. **テスト**（`test/ingame.test.mjs`）: カードの Lua をそのまま fengari で実行し、
-   白い描画命令を `raster.js` / `pixelFont.js` で描いて、fixture と画素単位で比べる。
+5. **テスト**（`test/ingame.test.mjs`）: カードの Lua をそのまま Storm Lua Engine で実行し
+   （`test/helpers/engineCard.mjs`）、エンジンが描いたフレームを fixture と画素単位で比べる。
+   1.x では fengari で実行し、白い描画命令を `raster.js` / `pixelFont.js` で描いていた。
    目盛とページ番号は緑で、輝度が閾値に届かない（最大 137）ので、どこも隠さずに
    全画素を比べている。
 
@@ -672,8 +683,9 @@ G1・G2 を 8 種類の大きさで各1枚、G3）。
 点灯画素では比べられないので入っていない。C5・C6 は撮影した内容がスクリプトと
 違っていたので除いた（C5 は D1 で撮り直した）。
 
-`test/raster.test.mjs` は規則1つにつき1つのテストを持ち、それぞれに規則を示す
-ページが書いてある。規則を壊したとき、どの規則かがテスト名で分かる。
+1.x には `test/raster.test.mjs` があり、規則1つにつき1つのテストを持っていた。
+2.0.0 で `raster.js` と一緒に削除したので、今は規則ごとのテストは無く、fixture の
+ページ単位の比較だけが残っている。
 
 ページを足すには、`tools/ingame/verify*.lua` にページを書き、ゲームで撮って
 PNG に変換し（`sips -s format png`）、`export-fixture.mjs` の `PAGES` に加えて

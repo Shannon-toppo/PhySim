@@ -7,16 +7,17 @@
 //
 // Prints, per page, the answers by value and probe, and how far they are
 // from three rules: every tie up (the Apple M5's x ties), round-half-to-even
-// (x = k + 1/512 always down, y = k - 1/512 always up), and media/raster.js,
-// whose snapUnits() models the RTX 4070Ti's vertex path and was fitted to
-// this card (doc/ingame-findings.md section 10).
+// (x = k + 1/512 always down, y = k - 1/512 always up), and snapUnits()
+// below, which models the RTX 4070Ti's vertex path and was fitted to this
+// card (doc/ingame-findings.md section 10).
 //
-// test/ties.test.mjs renders the card through media/raster.js with the ties
+// test/ties.test.mjs renders the card through Storm Lua Engine with the ties
 // pushed up and then down and checks this file reads back all-up and
-// all-down, so the layout here and in the Lua can't drift apart.
+// all-down, so the layout here and in the Lua can't drift apart. With the tie
+// left exactly on 1/512 the engine must read what snapUnits() predicts: the
+// engine follows the same RTX 4070Ti shots (its docs/specs/screen.md).
 import { rectify } from "./rectify.mjs";
 import { parsePage } from "./screen.mjs";
-import { snapUnits } from "../../../media/raster.js";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -93,9 +94,36 @@ export function decode(list, lit) {
   });
 }
 
+/**
+ * The GPU's vertex snap, in whole 1/256ths of a pixel. Which way a vertex
+ * exactly on a tie (k + 1/512) goes is decided by the float32 arithmetic on
+ * the way to the screen, so it is modelled rather than rounded: the RTX
+ * 4070Ti's vertex path, fitted to this card (every x and y tie on eight
+ * monitor sizes, 1418 of them, none wrong). The projection carries the
+ * half-pixel offset, the viewport is a separate multiply and add, and the
+ * fixed-point conversion rounds half to even. `size` is the monitor's width
+ * for x and its height for y — the error depends on it: on a 64 wide monitor
+ * 59 + 1/512 rounds down, on a 96 wide one up.
+ *
+ * It used to live in the panel's own rasteriser (media/raster.js); the panel
+ * now shows Storm Lua Engine's frames, and this reader is what still needs
+ * the model on its own.
+ * @param {number} v @param {number} size
+ * @returns {number}
+ */
+export function snapUnits(v, size) {
+  const f = Math.fround;
+  const scale = f(2 / size), half = f(size / 2);
+  const ndc = f(f(f(v) * scale) + f(-1 + f(0.5 * scale)));
+  const screen = f(f(ndc * half) + half);        // pixel centres at +0.5
+  const u = screen * 256 - 128;                  // both exact in double
+  const lo = Math.floor(u), frac = u - lo;
+  return frac > 0.5 || (frac === 0.5 && lo % 2 !== 0) ? lo + 1 : lo;
+}
+
 /** What each candidate rule says for one tie. */
 export const RULES = {
-  "raster.js (RTX 4070Ti model)": (/** @type {Probe} */ p) => snapUnits(p.value, p.size) / 256 > p.value ? "up" : "down",
+  "RTX 4070Ti model": (/** @type {Probe} */ p) => snapUnits(p.value, p.size) / 256 > p.value ? "up" : "down",
   "all up": () => "up",
   "half to even": (/** @type {Probe} */ p) => {
     const s = p.value * 256, f = Math.floor(s);

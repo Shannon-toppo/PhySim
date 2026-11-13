@@ -1,7 +1,7 @@
 // Screenshots -> test/fixtures/ingame-raster.json: the lit pixels of every
 // page whose content is white shapes or text, as horizontal runs.
-// test/ingame.test.mjs runs the same card page through media/raster.js and
-// media/pixelFont.js and compares.
+// test/ingame.test.mjs runs the same card page on Storm Lua Engine and
+// compares.
 //
 //   node tools/ingame/analysis/export-fixture.mjs <macPngDir> <winPngDir> <out.json>
 //

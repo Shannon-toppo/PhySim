@@ -1,5 +1,15 @@
 # macOS で動作しない原因（調査記録）
 
+> **2026-11-12 追記（2.0.0）:** この文書は 1.x の設計の記録で、今のコードの説明ではない。
+> 2.0.0 で PhySim は LifeBoatAPI に依存しなくなり、マイコンの Lua を Storm Lua Engine
+> （`@stormcat-works/storm-lua-engine`、WebAssembly）で自分で実行するようになった。
+> 以下のブロッカーはどれも LifeBoatAPI のシミュレーター（Windows 用の luasocket DLL、
+> `STORMWORKS_Simulator.exe`、`dir /b` によるファイル一覧）を動かすためのもので、
+> その仕組み自体が無くなったので、macOS 固有の制限も無くなった。本文に出てくる対策
+> （同梱 luasocket、`_simulator.lua` へのパッチ、`config.cpath` / `config.luaArch` の書き換え、
+> `FileSystemUtils.findPathsInDir` の置き換え、ポート 14238 の代替サーバー）は 2.0.0 で全部削除した。
+> 2.0.0 の自動テストは macOS で通しているが、Windows・Linux の VSCode での動作はまだ確かめていない。
+
 調査日: 2026-08-07
 調査環境: macOS 15 (Darwin 25.6.0) / Apple Silicon (arm64)
 対象バージョン: PhySim 0.3.0 / `NameousChangey.lifeboatapi` 0.0.33 / `actboy168.lua-debug` 1.61.0 (darwin-arm64)

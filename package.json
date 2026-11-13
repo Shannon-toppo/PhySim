@@ -2,23 +2,23 @@
   "name": "physim",
   "displayName": "Stormworks Physics Sensor Sim",
   "description": "%description%",
-  "version": "1.2.1",
+  "version": "2.0.0",
   "publisher": "shannon-toppo",
   "icon": "images/icon.png",
   "license": "MIT",
   "keywords": [
     "stormworks",
-    "lifeboatapi",
     "lua",
     "microcontroller",
-    "physics sensor"
+    "physics sensor",
+    "simulator"
   ],
   "bugs": {
     "url": "https://github.com/Shannon-toppo/PhySim/issues"
   },
   "homepage": "https://github.com/Shannon-toppo/PhySim#readme",
   "engines": {
-    "vscode": "^1.73.0"
+    "vscode": "^1.101.0"
   },
   "capabilities": {
     "untrustedWorkspaces": {
@@ -36,14 +36,32 @@
   },
   "main": "./out/extension.js",
   "l10n": "./l10n",
-  "extensionDependencies": [
-    "NameousChangey.lifeboatapi"
-  ],
   "activationEvents": [
-    "onStartupFinished"
+    "onLanguage:lua",
+    "onDebugResolve:physim"
   ],
   "contributes": {
     "commands": [
+      {
+        "command": "physim.run",
+        "title": "%command.run.title%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "physim.runWithoutDebugging",
+        "title": "%command.runWithoutDebugging.title%"
+      },
+      {
+        "command": "physim.stop",
+        "title": "%command.stop.title%",
+        "icon": "$(debug-stop)",
+        "enablement": "physim.running"
+      },
+      {
+        "command": "physim.build",
+        "title": "%command.build.title%",
+        "icon": "$(package)"
+      },
       {
         "command": "physim.open",
         "title": "%command.open.title%"
@@ -59,16 +77,15 @@
       {
         "command": "physim.showLog",
         "title": "%command.showLog.title%"
+      },
+      {
+        "command": "physim.copyMcpConfig",
+        "title": "%command.copyMcpConfig.title%"
       }
     ],
     "configuration": {
       "title": "Stormworks Physics Sensor Sim",
       "properties": {
-        "physim.port": {
-          "type": "number",
-          "default": 14239,
-          "description": "%config.physim.port.description%"
-        },
         "physim.autoOpenOnSimulate": {
           "type": "boolean",
           "default": true,
@@ -87,23 +104,123 @@
           "default": "beside",
           "description": "%config.physim.panel.openLocation.description%"
         },
-        "physim.autoInjectLibraryPath": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.physim.autoInjectLibraryPath.description%"
-        },
         "physim.monitors.openInNewWindow": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "%config.physim.monitors.openInNewWindow.markdownDescription%"
         },
-        "physim.monitors.useBuiltInOnWindows": {
+        "physim.keybindings.useF6F7": {
           "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.physim.monitors.useBuiltInOnWindows.markdownDescription%"
+          "default": true,
+          "markdownDescription": "%config.physim.keybindings.useF6F7.markdownDescription%"
+        },
+        "physim.agent.showInPanel": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.physim.agent.showInPanel.markdownDescription%"
+        },
+        "physim.libraryPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "%config.physim.libraryPaths.markdownDescription%"
+        },
+        "physim.build.minify": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.physim.build.minify.description%"
+        },
+        "physim.build.outputDirectory": {
+          "type": "string",
+          "default": "_build/release",
+          "scope": "resource",
+          "description": "%config.physim.build.outputDirectory.description%"
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "physim.run",
+        "key": "f6",
+        "when": "editorTextFocus && editorLangId == lua && !inDebugMode && config.physim.keybindings.useF6F7"
+      },
+      {
+        "command": "physim.build",
+        "key": "f7",
+        "when": "editorTextFocus && editorLangId == lua && !inDebugMode && config.physim.keybindings.useF6F7"
+      },
+      {
+        "command": "physim.run",
+        "key": "shift+f6",
+        "when": "editorTextFocus && editorLangId == lua && !inDebugMode"
+      },
+      {
+        "command": "physim.build",
+        "key": "shift+f7",
+        "when": "editorTextFocus && editorLangId == lua && !inDebugMode"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "physim.run",
+          "when": "resourceLangId == lua && !physim.running",
+          "group": "navigation@1"
+        },
+        {
+          "command": "physim.stop",
+          "when": "resourceLangId == lua && physim.running",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "breakpoints": [
+      {
+        "language": "lua"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "physim",
+        "label": "PhySim (Stormworks Lua)",
+        "languages": [
+          "lua"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "%debug.program.description%"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "physim",
+            "request": "launch",
+            "name": "PhySim: Run Current File",
+            "program": "${file}"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "PhySim: Run Current File",
+            "description": "%debug.snippet.description%",
+            "body": {
+              "type": "physim",
+              "request": "launch",
+              "name": "PhySim: Run Current File",
+              "program": "^\"\\${file}\""
+            }
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile && npm run copy-three",
@@ -118,14 +235,18 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^18.0.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@types/node": "^22.0.0",
     "@types/three": "^0.160.0",
-    "@types/vscode": "^1.73.0",
+    "@types/vscode": "^1.101.0",
     "eslint": "^10.6.0",
     "fengari": "^0.1.5",
     "globals": "^17.7.0",
     "three": "^0.160.0",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.62.1"
+  },
+  "dependencies": {
+    "@stormcat-works/storm-lua-engine": "0.4.1"
   }
 }

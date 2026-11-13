@@ -1,31 +1,21 @@
 -- PhySim.lua — Lua side of the Stormworks Physics Sensor Sim VSCode extension.
 --
--- The extension hosts a TCP server (default 127.0.0.1:14239) that streams the
--- current state of the panel gizmo as length-prefixed text messages:
---   "%04d" .. "PHYS|posX|posY|posZ|rotX|rotY|rotZ|velX|velY|velZ|angVelX|angVelY|angVelZ"
---   "%04d" .. "RATE|ticksPerSecond"     (the panel's simulation speed; 60 = real time)
---
--- The server sends nothing until this side's first frame proves the session:
---   "%04d" .. "PHYSIM_AUTH|token"        (token = `_physim_token`, renewed every F6)
+-- The extension runs your microcontroller script itself (on Storm Lua Engine)
+-- and keeps the pose of the panel's gizmo next to it. This module reads that
+-- pose and writes it to input channels, the way a physics sensor wired to the
+-- microcontroller would.
 --
 -- Coordinates are Stormworks left-handed: +X East, +Y Up, +Z North. Rotations
 -- are Euler XYZ in radians, normalized to [-π, π). Velocities are per tick.
 --
--- LifeBoatAPI's sandbox does NOT expose `setmetatable` (in-game runtime
--- doesn't have it either), and its `require` discards return values. So this
--- module:
---   * publishes itself as the global `PhySim` (sandbox-friendly module style),
---   * uses a singleton pattern — `PhySim:new()` (re)initialises the same table
---     and returns it, so no metatable is needed.
---
 -- Typical usage in a microcontroller script:
 --
 --   require("PhySim")           -- defines global `PhySim`
---   phys = PhySim:new()         -- (re)connect; phys IS PhySim
+--   phys = PhySim:new()         -- phys IS PhySim
 --
 --   function onLBSimulatorTick(simulator, ticks)
 --       phys:update()                                       -- pull latest values
---       phys:injectAsInputs(simulator, 1)                   -- write to input.getNumber(1..12)
+--       phys:injectAsInputs(simulator, 1)                   -- write to input.getNumber(1..17)
 --   end
 --
 --   function onTick()
@@ -33,44 +23,32 @@
 --       -- or via the module:
 --       local rx, ry, rz = phys:rotation()
 --   end
-
--- Pick up the socket library that the VSCode extension injected from outside
--- the sandbox (see debugConfigPatcher.ts). `_physim_socket` is a sandbox-env
--- global written by the patched _build/_simulator.lua.
 --
--- NOTE: the LifeBoatAPI sandbox does NOT expose `pcall`, `error`, `assert`,
--- `setmetatable`, etc. — we can only rely on the tiny set in
--- SimulatorSandbox.lua's env table. So we just print a clear message and let
--- the user retry; no exceptions, no metatables.
-local _socket = _physim_socket
-if not _socket then
-    print("[PhySim] 'socket' is not available inside the LifeBoatAPI sandbox. "
-        .. "The PhySim VSCode extension should patch _build/_simulator.lua to "
-        .. "expose it. Make sure the extension is installed and active, then "
-        .. "re-run F6.")
+-- Wrap the PhySim lines in a simulator-only section when the script is also
+-- built for the game: none of this exists there.
+--
+-- Module style. `require` here is include-once and discards return values
+-- (LifeBoatAPI's convention, which the engine's development loader keeps), so
+-- the module publishes itself as the global `PhySim`. It is a singleton —
+-- `PhySim:new()` re-initialises the same table and returns it — and uses no
+-- metatables, pcall or error, so it stays valid in the game's own restricted
+-- environment even though it is never shipped there.
+
+-- The extension's synchronous callbacks; see src/engine/runner.ts.
+--   phys()      -> the 12 pose numbers below, in wire order
+--   tickRate()  -> ticks per second the panel is running at
+local _host = __physim_host
+if not _host then
+    print("[PhySim] This script is not running inside the PhySim VSCode extension. "
+        .. "Start it with the \"PhySim: Run\" command.")
     return
 end
 
--- This run's token for the panel's server, put next to `_physim_socket` by the
--- same patch. Sent as the first frame of every connection.
-local _token = _physim_token
-
--- Module / singleton. Published as a global so the sandboxed require() (which
--- discards return values) still gives the user access.
+-- Module / singleton.
 PhySim = {
-    host            = "127.0.0.1",
-    port            = 14239,
-    client          = nil,
-    isAlive         = false,
-    _buf            = "",
-    -- Bytes still to send: the auth frame, until a non-blocking send takes it.
-    _out            = "",
-    -- Tick rate the panel asked for, and whether it still has to reach the
-    -- simulator. Applied in injectAsInputs, the only place we get `simulator`;
-    -- `_sim` remembers it so a closed socket can put 60 Hz back.
+    -- Kept for scripts that test it: the pose is always available now.
+    isAlive         = true,
     _tps            = 60,
-    _rateDirty      = false,
-    _sim            = nil,
     _state          = {
         position        = { 0, 0, 0 },
         rotation        = { 0, 0, 0 },
@@ -79,145 +57,39 @@ PhySim = {
     }
 }
 
----@param host string|nil host the panel listens on (default "127.0.0.1")
----@param port number|nil port the panel listens on (default 14239)
+---The arguments are accepted and ignored: earlier versions connected to the
+---panel over TCP and took a host and port here.
 ---@return table the PhySim singleton, ready to use
 function PhySim:new(host, port)
-    self.host    = host or "127.0.0.1"
-    self.port    = port or 14239
-    self._buf    = ""
-    self._out    = ""
-    self.client  = nil
-    self.isAlive = false
-    self._tps       = 60
-    self._rateDirty = false
-    self._sim       = nil
+    self.isAlive = true
+    self._tps    = 60
     self._state.position[1],        self._state.position[2],        self._state.position[3]        = 0, 0, 0
     self._state.rotation[1],        self._state.rotation[2],        self._state.rotation[3]        = 0, 0, 0
     self._state.velocity[1],        self._state.velocity[2],        self._state.velocity[3]        = 0, 0, 0
     self._state.angularVelocity[1], self._state.angularVelocity[2], self._state.angularVelocity[3] = 0, 0, 0
-    PhySim._tryConnect(self)
     return self
 end
 
-function PhySim:_tryConnect()
-    local sock, err = _socket.tcp()
-    if not sock then return false end
-    sock:settimeout(0)                      -- non-blocking everything
-    local ok, cerr = sock:connect(self.host, self.port)
-    -- on Windows a non-blocking connect returns "timeout" until ready, but we
-    -- proceed regardless and just feed the socket through select() each tick
-    if not ok and cerr ~= "timeout" and cerr ~= "already connected" then
-        sock:close()
-        return false
-    end
-    self.client  = sock
-    self.isAlive = true
-    if _token then
-        local body = "PHYSIM_AUTH|" .. _token
-        self._out = string.format("%04d", #body) .. body
-    end
-    return true
-end
-
--- Push queued bytes. The connect is non-blocking, so the first attempts can
--- fail with "timeout" until it completes; update() simply tries again next tick.
-function PhySim:_flush()
-    if #self._out == 0 then return end
-    local last, err, partial = self.client:send(self._out)
-    local sent = last or partial or 0
-    if sent > 0 then self._out = self._out:sub(sent + 1) end
-end
-
--- Wrap an angle into [-π, π). CH4-6 must stay bounded however far the panel's
--- simulation has spun; component-wise wrapping is exact for Euler angles since
+-- Normalize an angle to [-π, π). The panel's rotation inputs accept ±2π, but
 -- each axis' rotation is 2π-periodic. Lua's `%` is floor-modulo, so this needs
 -- no sign fix-up — the JS twin is normalizeAngle() in media/channels.js.
+-- A hair below -π the modulo rounds to exactly 2π and the result would be +π,
+-- the one value the range excludes; it is folded back to -π, as the JS twin does.
 local function _normAngle(a)
-    return (a + math.pi) % (2 * math.pi) - math.pi
+    local r = (a + math.pi) % (2 * math.pi) - math.pi
+    if r >= math.pi then return -math.pi end
+    return r
 end
 
-local function _split(s, sep)
-    local t, i = {}, 1
-    for part in string.gmatch(s, "([^" .. sep .. "]+)") do
-        t[i] = part; i = i + 1
-    end
-    return t
-end
-
----Drain any messages waiting on the socket and update internal state.
----Safe to call every tick; non-blocking.
+---Read the panel's current pose. Call once per tick, before using the values.
 function PhySim:update()
-    if not self.client then
-        if not PhySim._tryConnect(self) then return end
-    end
-    PhySim._flush(self)
-
-    -- pull bytes until select() says nothing is ready
-    while true do
-        local readable = _socket.select({ self.client }, nil, 0)
-        if not readable or #readable == 0 then break end
-
-        local chunk, err, partial = self.client:receive(4096)
-        local data = chunk or partial
-        if (not data) or #data == 0 then
-            if err == "closed" then
-                self.isAlive = false
-                self.client:close()
-                self.client = nil
-                -- no panel left to show the speed; don't stay in slow motion
-                PhySim._setRate(self, 60)
-            end
-            break
-        end
-        self._buf = self._buf .. data
-    end
-
-    -- parse all complete frames out of the buffer
-    while #self._buf >= 4 do
-        local sz = tonumber(self._buf:sub(1, 4))
-        if not sz then
-            -- corrupt; resync by dropping a byte
-            self._buf = self._buf:sub(2)
-        elseif #self._buf < 4 + sz then
-            break
-        else
-            local body = self._buf:sub(5, 4 + sz)
-            self._buf  = self._buf:sub(5 + sz)
-            local v = _split(body, "|")
-            if v[1] == "PHYS" and #v >= 13 then
-                self._state.position[1]        = tonumber(v[2])  or 0
-                self._state.position[2]        = tonumber(v[3])  or 0
-                self._state.position[3]        = tonumber(v[4])  or 0
-                -- normalized on arrival so rotation() and CH4-6 agree even if
-                -- an unwrapped value ever reaches us
-                self._state.rotation[1]        = _normAngle(tonumber(v[5])  or 0)
-                self._state.rotation[2]        = _normAngle(tonumber(v[6])  or 0)
-                self._state.rotation[3]        = _normAngle(tonumber(v[7])  or 0)
-                self._state.velocity[1]        = tonumber(v[8])  or 0
-                self._state.velocity[2]        = tonumber(v[9])  or 0
-                self._state.velocity[3]        = tonumber(v[10]) or 0
-                self._state.angularVelocity[1] = tonumber(v[11]) or 0
-                self._state.angularVelocity[2] = tonumber(v[12]) or 0
-                self._state.angularVelocity[3] = tonumber(v[13]) or 0
-            elseif v[1] == "RATE" and #v >= 2 then
-                local tps = tonumber(v[2])
-                if tps and tps > 0 and tps <= 60 then PhySim._setRate(self, tps) end
-            end
-        end
-    end
-end
-
----Record a tick rate and hand it to the simulator if we already have one.
----Writes `_timePerFrame` directly: setFrameRate() and the TICKRATE message
----would also reset LifeBoatAPI's frame skip.
-function PhySim:_setRate(tps)
-    self._tps = tps
-    self._rateDirty = true
-    if self._sim then
-        self._sim._timePerFrame = 1 / tps
-        self._rateDirty = false
-    end
+    local s = self._state
+    local px, py, pz, rx, ry, rz, vx, vy, vz, ax, ay, az = _host.phys()
+    s.position[1],        s.position[2],        s.position[3]        = px, py, pz
+    s.rotation[1],        s.rotation[2],        s.rotation[3]        = _normAngle(rx), _normAngle(ry), _normAngle(rz)
+    s.velocity[1],        s.velocity[2],        s.velocity[3]        = vx, vy, vz
+    s.angularVelocity[1], s.angularVelocity[2], s.angularVelocity[3] = ax, ay, az
+    self._tps = _host.tickRate()
 end
 
 ---Ticks per second the panel is running at (60 = real time).
@@ -232,7 +104,7 @@ function PhySim:angularVelocity() return self._state.angularVelocity[1], self._s
 local _TICKS_PER_SEC = 60
 local _TWO_PI        = 2 * math.pi
 
----Write the 17 channels into the LifeBoatAPI simulator's input number table.
+---Write the 17 channels into the simulator's input numbers.
 ---Call from onLBSimulatorTick(simulator, ticks) so the values are visible to
 ---onTick() via the standard input.getNumber(N) API.
 ---
@@ -247,19 +119,11 @@ local _TWO_PI        = 2 * math.pi
 ---   16    : Tilt.x — tilt of local +X (right)   from horizontal [rotations]
 ---   17    : compass bearing of local +Z (N=0, W=+0.25, S=±0.5, E=-0.25) [rotations]
 ---
----@param simulator table LifeBoatAPI.Tools.Simulator instance (the first arg of onLBSimulatorTick)
+---@param simulator table the `simulator` object (the first arg of onLBSimulatorTick)
 ---@param startCh number|nil starting channel (default 1; consumes startCh..startCh+16)
 function PhySim:injectAsInputs(simulator, startCh)
     startCh = startCh or 1
     local s = self._state
-
-    -- The panel's speed slows LifeBoatAPI's tick loop along with its own
-    -- integrator. Only this call sees `simulator`, so it is where a RATE lands.
-    self._sim = simulator
-    if self._rateDirty then
-        simulator._timePerFrame = 1 / self._tps
-        self._rateDirty = false
-    end
 
     -- raw state (CH 1-12)
     simulator:setInputNumber(startCh + 0,  s.position[1])
@@ -318,12 +182,6 @@ function PhySim:injectAsInputs(simulator, startCh)
     simulator:setInputNumber(startCh + 16, -math.atan(fwd_x, fwd_z) / _TWO_PI)
 end
 
+---Nothing to release any more; kept so existing scripts that call it still run.
 function PhySim:close()
-    if self.client then
-        self.client:close()
-        self.client = nil
-    end
-    self._out = ""
-    self.isAlive = false
-    PhySim._setRate(self, 60)
 end

@@ -26,7 +26,8 @@ import { scene, renderer, camera, orbit, transform, targetGroup, updateLabels, f
 import { syncPoseFromInputs, syncInputsFromPose } from "./pose.js";
 import { scheduleSend, sendState } from "./messaging.js";
 import { requestScreens } from "./monitorMessaging.js";
-import { applyScreenConfig, applyScreenFrame } from "./mcScreen.js";
+import { applyScreenConfig, applyScreenPixels } from "./mcScreen.js";
+import { applyControlsConfig } from "./controls.js";
 import { setSimulating, toggleSimulating, step } from "./simulation.js";
 import { renderPresetList, applyPresetState } from "./presets.js";
 import { updateVisuals, resetTrail } from "./visuals.js";
@@ -150,11 +151,15 @@ window.addEventListener("message", e => {
   else if (msg.type === "setMode") setMode(msg.mode);
   else if (msg.type === "presetList") renderPresetList(Array.isArray(msg.names) ? msg.names : []);
   else if (msg.type === "presetLoaded") applyPresetState(msg.state);
+  // An AI agent's run, mirrored by the host: its pose replaces whatever the
+  // panel was doing — a running Simulate would only fight it.
+  else if (msg.type === "mirrorPose") { setSimulating(false); applyPresetState(msg.state, true); }
   else if (msg.type === "csvState") applyCsvState(msg);
   else if (msg.type === "csvDialog") applyCsvDialog();
-  // macOS monitor stand-in — never sent on Windows.
+  // The microcontroller's monitors, rasterised by the engine in the host.
   else if (msg.type === "screenConfig") applyScreenConfig(Array.isArray(msg.screens) ? msg.screens : []);
-  else if (msg.type === "screenFrame") applyScreenFrame(Array.isArray(msg.commands) ? msg.commands : []);
+  else if (msg.type === "screenPixels") applyScreenPixels(Array.isArray(msg.frames) ? msg.frames : []);
+  else if (msg.type === "controlsConfig") applyControlsConfig(msg.controls, msg.readOnly === true);
 });
 
 // --- Input events --------------------------------------------------------------
@@ -203,7 +208,7 @@ function loop() {
 }
 loop();
 
-// initial send (sets table to all zeros and primes the TCP client if connected)
+// initial send (sets the table to all zeros and hands the host the pose a run starts from)
 sendState();
 // repaint monitors if the simulator was already running when this panel opened
 requestScreens();

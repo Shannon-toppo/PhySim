@@ -15,8 +15,8 @@ permissions:
 
 jobs:
   check:
-    # Most users are on Windows and the monitors are mandatory on macOS; the
-    # tests that swap process.platform still run on the runner's own `path`.
+    # The extension has no per-OS code, but paths, worker threads and the
+    # engine's WASM loading all go through the runner's own Node and `path`.
     strategy:
       fail-fast: false
       matrix:

@@ -18,4 +18,8 @@ export const monitorsSection = mustGet("monitors");
 export const monitorsList = mustGet("monitors-list");
 export const monitorZoomEl = /** @type {HTMLSelectElement} */ (mustGet("monitor-zoom"));
 export const monitorAddEl = /** @type {HTMLButtonElement} */ (mustGet("monitor-add"));
-export const monitorTrueColourEl = /** @type {HTMLInputElement} */ (mustGet("monitor-truecolour"));
+// The simulator's buttons and sliders, below the monitors (controls.js).
+// Starts hidden; shown while the running script reads any.
+export const controlsSection = mustGet("controls");
+export const controlsButtons = mustGet("controls-buttons");
+export const controlsSliders = mustGet("controls-sliders");

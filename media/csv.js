@@ -33,10 +33,10 @@ export const CSV_COLUMNS = [
 export const CSV_HEADER = CSV_COLUMNS.join(",");
 
 /**
- * Same rounding as src/physServer.ts:fmt(), so CH1–12 in the CSV read exactly
- * like the values that went out on the wire. Non-finite is written as 0 for
- * the same reason the wire encoder does it — a NaN in the file would break
- * whatever plots it.
+ * Six decimals, trailing zeros dropped: the text 1.x's TCP encoder
+ * (physServer.ts:fmt(), removed in 2.0.0) put on the wire, kept so logs from
+ * every version read the same. Non-finite is written as 0 — a NaN in the file
+ * would break whatever plots it.
  *
  * @param {number} n
  * @returns {string}

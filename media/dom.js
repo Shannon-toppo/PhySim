@@ -41,15 +41,15 @@ export const csvCountEl = mustGet("csv-count");
 // and the monitor section get the full panel width (panel.js owns the state).
 export const sidebarToggleBtn = /** @type {HTMLButtonElement} */ (mustGet("sidebar-toggle"));
 
-// Monitor stand-in for LifeBoatAPI's Windows-only simulator exe. The section's
-// own elements live in monitorDom.js, which the stand-alone monitor window
-// loads without this file.
+// The microcontroller's monitors (pictures rasterised by the engine). The
+// section's own elements live in monitorDom.js, which the stand-alone monitor
+// window loads without this file.
 export { monitorsSection } from "./monitorDom.js";
 // Drag handle between the viewport and the monitor section (panel.js owns the
 // drag; mcScreen.js hides it via body.no-monitors when there is nothing to show).
 export const monitorsResizer = mustGet("monitors-resizer");
 
-// vx-vz: linear velocity, ax-az: angular velocity (CH7-12, sent on the wire).
+// vx-vz: linear velocity, ax-az: angular velocity (CH7-12, sent to the host).
 // lax-laz / aax-aaz: linear / angular acceleration — webview-only, they drive
 // the velocities during simulation but are never sent as channels.
 export const VEL_KEYS   = ["vx", "vy", "vz", "ax", "ay", "az"];

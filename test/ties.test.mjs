@@ -1,58 +1,39 @@
 // Card G (tools/ingame/verifyG_ties.lua) and the tool that reads it back
 // (tools/ingame/analysis/ties.mjs) must agree on where every probe is.
 //
-// The card is rendered through media/raster.js — every probe at once, so a
-// probe that spills onto another's pixel shows up too — with its tie t
-// pushed 1/4096px up and then down (for G2, whose ties are at k - t, the
-// other way round). The decoder must read all-up and all-down. With t
-// exactly on the tie it must read what raster.js's own tie model predicts
-// (RULES in ties.mjs), which is how the RTX 4070Ti rounded every tie on the
-// card (doc/ingame-findings.md section 10).
+// The card is rendered on Storm Lua Engine — every probe at once, so a probe
+// that spills onto another's pixel shows up too — with its tie t pushed
+// 1/4096px up and then down (for G2, whose ties are at k - t, the other way
+// round). The decoder must read all-up and all-down. With t exactly on the
+// tie it must read what the reader's RTX 4070Ti model predicts (snapUnits in
+// ties.mjs), which is how the RTX 4070Ti rounded every tie on the card
+// (doc/ingame-findings.md section 10) and what the engine's screen contract
+// follows.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cardCalls } from "./helpers/cardRunner.mjs";
-import { fillCircle, fillTriangle, fillRectangle } from "../media/raster.js";
+import { cardFrame, litPixels } from "./helpers/engineCard.mjs";
 import { probes, decode, RULES } from "../tools/ingame/analysis/ties.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CARD = path.join(ROOT, "tools/ingame/verifyG_ties.lua");
 const SIZES = [[32, 32], [96, 32], [64, 64], [96, 96], [160, 96], [288, 160]];
 
-/** The card with its tie moved by `nudge` px (0 = the card as shot). */
+/** The card's text with its tie moved by `nudge` px (0 = the card as shot). */
 function cardWith(nudge) {
-  if (nudge === 0) return CARD;
   const src = fs.readFileSync(CARD, "utf8");
+  if (nudge === 0) return src;
   assert.match(src, /^t=1\/512$/m);
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "physim-g-")), "card.lua");
-  fs.writeFileSync(file, src.replace(/^t=1\/512$/m, `t=1/512+(${nudge})`));
-  return file;
+  return src.replace(/^t=1\/512$/m, `t=1/512+(${nudge})`);
 }
 
-/** Bright pixels of one page, drawn the way ingame.test.mjs draws them. */
-function render(file, page, width, height) {
-  const SCREEN = { width, height };
-  const lit = new Set();
-  let bright = true;
-  const run = (x, y, w) => {
-    for (let i = 0; i < w; i++) if (bright) lit.add(`${x + i},${y}`);
-  };
-  for (const [name, ...a] of cardCalls(file, page, SCREEN)) {
-    const n = /** @type {number[]} */ (a);
-    switch (name) {
-      case "setColor": bright = n[0] >= 200 && n[1] >= 200 && n[2] >= 200; break;
-      case "drawRectF": fillRectangle(run, n[0], n[1], n[2], n[3], SCREEN); break;
-      case "drawTriangleF": fillTriangle(run, n[0], n[1], n[2], n[3], n[4], n[5], SCREEN); break;
-      case "drawCircleF": fillCircle(run, n[0], n[1], n[2], SCREEN); break;
-      case "drawClear": case "drawText": break;   // black clear; the label is green
-      default: throw new Error(`page G${page}: unhandled ${name}`);
-    }
-  }
-  return lit;
+/** Bright pixels of one page, binarised the way ingame.test.mjs does it. */
+function render(source, page, width, height) {
+  const px = cardFrame(CARD, page, { width, height }, source);
+  return litPixels(px, width, height);
 }
 
 const pagesFor = (h) => h >= 64 ? [1, 2, 3] : [1, 2];
@@ -64,7 +45,7 @@ for (const [w, h] of SIZES) {
       assert.ok(list.length > 0);
       // G2's ties are at k - t, so a larger t pushes them down.
       const flip = page === 2 ? { up: "down", down: "up" } : { up: "up", down: "down" };
-      const model = RULES["raster.js (RTX 4070Ti model)"];
+      const model = RULES["RTX 4070Ti model"];
       for (const [nudge, want] of [[1 / 4096, () => flip.up], [-1 / 4096, () => flip.down], [0, model]]) {
         const lit = render(cardWith(nudge), page, w, h);
         const got = decode(list, (x, y) => lit.has(`${x},${y}`));

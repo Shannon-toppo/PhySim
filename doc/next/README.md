@@ -174,6 +174,8 @@ PhySimはスクリプトを1秒に60ティック（シミュレーション速�
 `print`、`pcall`、`require`が使えます。`print`と`debug.log`の出力はデバッグコンソールに出て、
 行をクリックすると呼び出した場所に移動します。
 
+ゲームと同じく、`input`と`output`の関数は`onTick`の中で、`screen`の関数は`onDraw`の中で呼んでください。`onDraw`の中で`input.getNumber`を呼ぶと、ゲームと同じ`attempting to use input function outside onTick`というエラーでスクリプトが止まります。描画に使う値は、`onTick`で変数に入れておきます。
+
 Luaのエラーが起きると、スクリプトは止まります。エラーはデバッグコンソールと通知に出ます。
 モニターには止まる直前の絵が残ります。スクリプトが`simulator:exit()`を呼んだときも実行は終わります。
 

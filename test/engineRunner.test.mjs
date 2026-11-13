@@ -101,6 +101,30 @@ test("a Lua error names the file and line, and ends the run", t => {
   assert.throws(() => runner.tick(), /failed/);
 });
 
+test("calls in the wrong phase are Lua errors at the caller's line, as in the game", t => {
+  const run = (source, ticks = 1) => {
+    const { runner } = project({ "main.lua": source });
+    t.after(() => runner.dispose());
+    runner.start();
+    for (let i = 0; i < ticks; i++) runner.tick();
+    return runner;
+  };
+  // An alias taken at the top level is caught too.
+  assert.throws(() => run(`gn = input.getNumber\nfunction onDraw()\n  gn(1)\nend`),
+    /main\.lua:3: attempting to use input function outside onTick/);
+  assert.throws(() => run(`function onDraw()\n  output.setBool(1, true)\nend`),
+    /main\.lua:2: attempting to use output function outside onTick/);
+  assert.throws(() => run(`function onTick()\n  screen.drawClear()\nend`),
+    /main\.lua:2: attempting to use screen function outside onDraw/);
+  assert.throws(() => run(`function onLBSimulatorTick()\n  screen.getHeight()\nend`),
+    /main\.lua:2: attempting to use screen function outside onDraw/);
+  // In their own phase they work, and the top level (unmeasured in the game) is left alone.
+  const ok = run(`w = screen.getWidth()\nn = input.getNumber(1)\nfunction onTick() v = input.getNumber(1) output.setNumber(1, w + 1) end\n` +
+    `function onDraw() screen.setColor(255, 255, 255) screen.drawRectF(0, 0, screen.getWidth(), 1) end`, 3);
+  assert.equal(ok.state, "ready");
+  assert.equal(ok.readIo().outputNumbers[0], 1, "screen.getWidth() at the top level reads 0, without an error");
+});
+
 test("print and debug.log reach onLog with their call site", t => {
   const { runner, logs, dir } = project({ "main.lua": `print("hello", 1)\nfunction onTick() debug.log("tick") end` });
   t.after(() => runner.dispose());
@@ -226,6 +250,22 @@ test("stepping over stays suspended until the phase ends", t => {
   assert.equal(runner.stack()[0].line, 3);
   assert.equal(runner.resume("continue"), "completed");
   assert.equal(runner.readIo().outputNumbers[0], 3);
+});
+
+test("step into an API call goes to the next line, not into the prelude's phase guard", t => {
+  const { runner, dir } = project({ "main.lua": `function f() return 1 end\nfunction onDraw()\n  screen.setColor(1, 2, 3)\n  screen.drawText(0, 0, f())\nend` });
+  t.after(() => runner.dispose());
+  const main = chunkName(path.join(dir, "main.lua"));
+  runner.start();
+  runner.setBreakpoints([{ source: main, line: 3 }]);
+  assert.equal(runner.tick(), "suspended");
+  runner.setBreakpoints([]);
+  const at = () => [runner.stack()[0].source, runner.stack()[0].line];
+  assert.equal(runner.resume("into"), "suspended");
+  assert.deepEqual(at(), [main, 4]);
+  assert.equal(runner.resume("into"), "suspended");
+  assert.deepEqual(at(), [main, 1], "a script function on the line is still stepped into");
+  assert.equal(runner.resume("continue"), "completed");
 });
 
 test("drawMap fills with the ocean colour instead of failing; map.* converts coordinates", t => {

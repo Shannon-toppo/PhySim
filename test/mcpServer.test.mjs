@@ -158,7 +158,7 @@ require("lib.gauge")
 ticks = 0
 function onTick()
   ticks = ticks + 1
-  -- As in the game, input.* reads nothing inside onDraw; what the picture needs is kept here.
+  -- input.* is an error inside onDraw, as in the game; what the picture needs is kept here.
   width, touched, tx, ty = math.floor(input.getNumber(20)), input.getBool(1), input.getNumber(21), input.getNumber(22)
   output.setNumber(1, input.getNumber(1) * 2)
   output.setNumber(2, input.getNumber(20) + property.getNumber("Gain"))

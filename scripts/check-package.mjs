@@ -20,6 +20,7 @@ const required = [
   "l10n/bundle.l10n.ja.json",
   "README.md",
   "LICENSE",
+  "THIRD_PARTY_NOTICES.md",
   "images/icon.png",
   "lua/PhySim.lua",
   // the engine is the one runtime dependency; .vscodeignore lets its dist/ through

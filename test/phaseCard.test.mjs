@@ -1,9 +1,8 @@
 // tools/ingame/verifyH_phase.lua — the card that asks the real game what
 // input.* / output.* do inside onDraw and screen.* inside onTick — run on the
-// engine. Two purposes: the card has to work before anyone carries it into the
-// game (paging, FIRE, every page reaching "OK"), and what the ENGINE answers on
-// each page is pinned here, so that the in-game answers have something exact
-// to be compared with.
+// engine. Two purposes: the card has to work (paging, FIRE, the announcing
+// frame), and PhySim has to answer each page as the game did when the card was
+// run there (2026-11-13): H1 OK, H2-H7 a Lua error that stops the script.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -78,7 +77,6 @@ test("bottom-right pages forward, bottom-left back, and both wrap; paging never 
 
 test("FIRE announces itself for one frame before it makes the call", t => {
   const c = card(t);
-  c.next();
   c.r.setTouch(1, { isTouched: true, isTouchedAlt: false, x: 5, y: 5, xAlt: 0, yAlt: 0 });
   c.r.tick();
   assert.deepEqual(colorOf(c.line()), YELLOW, '"FIRING": if the next frame is an error, this is what is left on the monitor');
@@ -87,48 +85,40 @@ test("FIRE announces itself for one frame before it makes the call", t => {
   assert.deepEqual(colorOf(c.line()), GREEN, '"OK ..."');
 });
 
-// What the ENGINE answers. The game's answers go beside these once the card has been shot there.
-const ENGINE = [
-  [1, "control", 1],
-  [2, "input.getNumber(1) in onDraw reads 0, not the monitor's width", 0],
-  [3, "input.getBool(1) in onDraw reads false", 0],
-  [4, "output.setNumber in onDraw is not an error", 1],
-  [5, "output.setBool in onDraw is not an error", 1],
-  [6, "screen.getWidth() in onTick reads 0", 0],
-  [7, "screen.drawRectF in onTick is not an error", 1]
+test("H1, the control, answers OK", t => {
+  const c = card(t);
+  c.fire();
+  assert.equal(c.r.state, "ready");
+  assert.deepEqual(c.out(), { page: 1, stage: 3, result: 1 });
+  assert.deepEqual(colorOf(c.line()), GREEN);
+});
+
+// What PhySim answers, which is what the game answered (2026-11-13, v1.15.26,
+// doc/ingame-findings.md §11): every page but the control stops the script.
+// The engine on its own reads 0 / ignores these; the prelude makes them errors.
+// The game's screenshots show line 80 (H2) and line 53 (H7) with these messages.
+const ERRORS = [
+  [2, "input.getNumber(1) in onDraw", 80, "input function outside onTick"],
+  [3, "input.getBool(1) in onDraw", 82, "input function outside onTick"],
+  [4, "output.setNumber in onDraw", 83, "output function outside onTick"],
+  [5, "output.setBool in onDraw", 84, "output function outside onTick"],
+  [6, "screen.getWidth() in onTick", 52, "screen function outside onDraw"],
+  [7, "screen.drawRectF in onTick", 53, "screen function outside onDraw"]
 ];
 
-for (const [page, what, result] of ENGINE) {
-  test(`on the engine, H${page}: ${what}`, t => {
+for (const [page, what, line, message] of ERRORS) {
+  test(`H${page}: ${what} stops the script, as in the game`, t => {
     const c = card(t);
     for (let i = 1; i < page; i++) c.next();
     assert.equal(c.out().page, page);
-    // H3 reads the touch itself: keep the finger down through the call, as the card asks.
-    if (page === 3) {
-      c.r.setTouch(1, { isTouched: true, isTouchedAlt: false, x: 5, y: 5, xAlt: 0, yAlt: 0 });
-      for (let i = 0; i < 4; i++) c.r.tick();
-    } else {
-      c.fire();
-    }
-    assert.equal(c.r.state, "ready", "no error on the engine");
-    assert.deepEqual(c.out(), { page, stage: 3, result });
-    assert.deepEqual(colorOf(c.line()), GREEN);
+    c.r.setTouch(1, { isTouched: true, isTouchedAlt: false, x: 5, y: 5, xAlt: 0, yAlt: 0 });
+    c.r.tick();
+    c.r.setTouch(1, { isTouched: false, isTouchedAlt: false, x: 0, y: 0, xAlt: 0, yAlt: 0 });
+    assert.throws(() => c.r.tick(), new RegExp(`verifyH_phase\\.lua:${line}: attempting to use ${message}`));
+    assert.equal(c.r.state, "failed");
+    assert.deepEqual(colorOf(c.line()), YELLOW, 'the monitor keeps "FIRING"');
   });
 }
-
-test("on the engine, what onDraw writes to the outputs is dropped, and what onTick draws is not shown", t => {
-  const c = card(t);
-  for (let i = 1; i < 4; i++) c.next();
-  c.fire();
-  assert.equal(c.r.readIo().outputNumbers[0], 0, "output.setNumber(1, 123) from onDraw did not take");
-  c.next();
-  c.fire();
-  assert.equal(c.r.readIo().outputBooleans[0], false);
-  c.next(); c.next();
-  c.fire();
-  const red = regionStats(c.picture()).colors.find(k => k.color[0] === 255 && k.color[1] === 0 && k.color[2] === 0);
-  assert.equal(red, undefined, "the red square drawn from onTick is nowhere on the monitor");
-});
 
 test("the dial on ch32 jumps to a page", t => {
   const c = card(t);
@@ -144,7 +134,8 @@ test("the text fits a 3x3 and the card runs on larger monitors too", t => {
   for (const size of ["3x3", "5x3", "9x5"]) {
     const c = card(t, size);
     for (let page = 1; page <= 7; page++) {
-      c.fire();
+      // Only the control page can be fired and go on: the others stop the script.
+      if (page === 1) c.fire();
       const p = c.picture();
       const edge = regionStats(p, { x: p.width - 1, y: 0, width: 1, height: p.height });
       assert.equal(edge.lit, 0, `H${page} on ${size}: nothing runs into the right edge`);

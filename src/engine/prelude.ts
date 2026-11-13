@@ -1,6 +1,9 @@
 // The Lua that runs before the user's script: LifeBoatAPI's `simulator` object,
 // rebuilt on the engine's host controls.
 //
+// Derived from Stormworks Lua with LifeBoatAPI by Nameous Changey
+// (Boost Software License 1.0; see THIRD_PARTY_NOTICES.md).
+//
 // Scripts written for LifeBoatAPI's simulator configure it through a global
 // `simulator` (`simulator:setScreen(1, "3x3")`, `simulator:setProperty(...)`)
 // and feed inputs from `onLBSimulatorTick(simulator, ticks)`. Keeping that
@@ -134,7 +137,45 @@ simulator = {
     exit = function(self) host.exit() end,
 }
 
+-- Calls in the wrong phase stop the script, as they do in the game (card H,
+-- doc/ingame-findings.md §11): input.* / output.* inside onDraw, screen.*
+-- inside onTick. The engine itself reads 0 / ignores them there. Wrapping the
+-- functions in the tables also catches an alias the script takes at its top
+-- level (S = screen), which the game catches too. The phase is read from the
+-- engine: screen.getWidth() is a monitor's width (at least 32) while drawing
+-- and 0 anywhere else. The top level is left alone (unmeasured in the game).
+local ticked = false
+do
+    local getWidth = screen.getWidth
+    -- The check is written out in each wrapper rather than called: every
+    -- API call pays for it against the instruction budget.
+    local function each(t, wrap)
+        local names = {}
+        for name, f in pairs(t) do
+            if type(f) == "function" then names[#names + 1] = name end
+        end
+        for _, name in ipairs(names) do t[name] = wrap(t[name]) end
+    end
+    local function outsideTick(message)
+        return function(f)
+            return function(...)
+                if getWidth() > 0 then error(message, 2) end
+                return f(...)
+            end
+        end
+    end
+    each(input, outsideTick("attempting to use input function outside onTick"))
+    each(output, outsideTick("attempting to use output function outside onTick"))
+    each(screen, function(f)
+        return function(...)
+            if ticked and getWidth() == 0 then error("attempting to use screen function outside onDraw", 2) end
+            return f(...)
+        end
+    end)
+end
+
 function ${PRELUDE_TICK}(ticks)
+    ticked = true
     local s = touchScreen(1)
     if not overriddenBools[1] then ctl.setInputBool(1, s.isTouched) end
     if not overriddenBools[2] then ctl.setInputBool(2, s.isTouchedAlt) end

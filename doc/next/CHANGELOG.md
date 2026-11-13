@@ -18,6 +18,7 @@ PhySimがマイコンのLuaを自分で実行するようになりました。Lu
 - 設定`physim.port`、`physim.autoInjectLibraryPath`、`physim.monitors.useBuiltInOnWindows`を削除しました。
 - エディタの補完用に、同梱の`lua/`を`lifeboatapi.stormworks.libs.libraryPaths`へ書き込む処理を削除しました。
 - `simulator:setFrameRate`は何もしません。実行の速さはパネルのシミュレーション速度で決まります。
+- `onDraw`の中で`input`や`output`の関数を呼ぶと、ゲームと同じくエラーになり、スクリプトが止まります。`onTick`の中で`screen`の関数を呼んだときも同じです。
 - `screen.drawMap`は地形を描かず、海の色（`screen.setMapColorOcean`の色）で塗りつぶします。1.xのPhySimのモニター表示と同じ扱いです。`map.screenToMap` / `map.mapToScreen`はLifeBoatAPIのシミュレーターと同じ式で計算します。
 - 対応するVS Codeを1.101以降にしました。
 

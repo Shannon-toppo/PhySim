@@ -318,7 +318,16 @@ export class VehicleRunner {
     this.requireState("suspended");
     let outcome: Outcome;
     try {
+      // The prelude wraps input.* / output.* / screen.* (the phase guard). A
+      // step into one of them would stop inside that wrapper, a chunk with no
+      // file; step on through it, as a step into the engine's own function would.
+      const depth = mode === "into" ? this.vm.stack().length : 0;
       outcome = this.vm.resume(mode);
+      for (let i = 0; mode === "into" && outcome === "suspended" && i < 64; i++) {
+        const frames = this.vm.stack();
+        if (frames.length <= depth || frames[0].source !== PRELUDE_CHUNK) break;
+        outcome = this.vm.resume("into");
+      }
     } catch (err) {
       this.fail();
       throw err;

@@ -89,8 +89,8 @@ test("the same calls give the same pictures and outputs", t => {
     require("PhySim")
     phys = PhySim:new()
     function onLBSimulatorTick(simulator) phys:update(); phys:injectAsInputs(simulator, 1) end
-    function onTick() output.setNumber(1, input.getNumber(1) * 2) end
-    function onDraw() screen.setColor(255, 255, 255); screen.drawText(1, 1, string.format("%.2f", input.getNumber(1))) end
+    function onTick() v = input.getNumber(1); output.setNumber(1, v * 2) end
+    function onDraw() screen.setColor(255, 255, 255); screen.drawText(1, 1, string.format("%.2f", v)) end
   `;
   const run = () => {
     const { session } = started(t, main);

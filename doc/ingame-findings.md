@@ -485,6 +485,33 @@ F3 と G のページ（tie pages）は、Mac と Windows が食い違っても�
 使い、Mac との差を表示する（`export-fixture.mjs`）。ほかのページはこれまでどおり
 1画素でも違えば止まる。fixture は 86 ページになった。
 
+## 11. 呼ぶ場所を間違えた関数（H カード、2026-11-13）
+
+`tools/ingame/verifyH_phase.lua`をMac（Apple M5）、Stormworks v1.15.26で実行した。画素は見ないカードなので、エラー画面だけを2枚撮った（`tools/ingame/image/appleM5/H2.jpg`、`H7.jpg`）。
+
+| ページ | 呼び出し | 実機 | エンジン（0.4.1） |
+|---|---|---|---|
+| H1 | 対照 | `OK` | `OK ok` |
+| H2 | `onDraw`の中の`input.getNumber(1)` | エラー（draw error） | `OK n1=0.0` |
+| H3 | `onDraw`の中の`input.getBool(1)` | エラー（draw error） | `OK b=false t=true` |
+| H4 | `onDraw`の中の`output.setNumber(1,123)` | エラー（draw error） | `OK set 123` |
+| H5 | `onDraw`の中の`output.setBool(1,true)` | エラー（draw error） | `OK set true` |
+| H6 | `onTick`の中の`screen.getWidth()` | エラー（tick error） | `OK w=0` |
+| H7 | `onTick`の中の`screen.drawRectF` | エラー（tick error） | `OK drew` |
+
+**H2〜H7の6つは、実機ではどれもLuaのエラーでスクリプトが止まる。** H1が`OK`になったので、FIREの仕組みそのものはエラーの原因ではない。エンジンは6つとも「何も返さない・書き込みを捨てる」で、どのページも実機と食い違う。PhySimは、ゲームなら止まるスクリプトをそのまま動かしてしまう。
+
+モニターは青画面になり、`ERROR`、`A PROBLEM HAS BEEN DETECTED IN ONE OR MORE CONNECTED SCRIPTS.`、失敗した段階、行番号つきのエラー文を出す。モニターにカーソルを当てると、同じエラー文が赤い見出しつきで出る。撮った2枚の文言は次のとおり。
+
+- `H2.jpg`：`DRAW_FAILURE`、見出しは`draw error`、本文は`80: attempting to use input function outside onTick`。カードの80行目はH2の`input.getNumber(1)`である。
+- `H7.jpg`：`TICK_FAILURE`、見出しは`tick error`、本文は`53: attempting to use screen function outside onDraw`。カードの53行目はH7の`S.setColor(255,0,0) S.drawRectF(...)`である。80行目と53行目がどちらもカードと合っているので、ゲームに貼ったスクリプトはファイルと同じである。この1枚は最初`H6.jpg`という名前で置かれていたが、行番号からH7のエラーと分かったので名前を改めた。H6の画面は撮っていない。
+
+エラー文から、関数そのものが呼ばれた段階を調べてエラーにしていると分かる。`input`のテーブルが`onDraw`の中で消えているわけではない。そのため、トップレベルで`local gn=input.getNumber`と取っておいて`onDraw`で呼んでも、同じエラーになるはずである（直接は測っていない）。`screen`はトップレベルで`S=screen`と取っておいた関数を呼んでエラーになったので、こちらは測定で分かっている。`output`とH6の`screen.getWidth()`の文言は撮っていない。`input`と`screen`の文言から、`output`も`attempting to use output function outside onTick`のように出ると思われるが、未確認である。
+
+文言は「`onTick`の外」「`onDraw`の外」と言っている。トップレベル（どちらの関数の中でもない場所）で呼んだときにどうなるかは、このカードでは調べていない。
+
+PhySimは、エンジンが直るまでプレリュード（`src/engine/prelude.ts`）で`input`、`output`、`screen`の関数を包み、同じ場面で同じ文言のエラーにしている。トップレベルは測っていないので、エラーにしていない。
+
 ## 撮影データの注意
 
 - **C5 と C6 はスクリプトどおりの内容ではなかった。** ページ見出しは正しく "C5" "C6"
@@ -505,3 +532,4 @@ F3 と G のページ（tie pages）は、Mac と Windows が食い違っても�
 | E | 3x3 以外のモニター、負の半径 |
 | F | 式で埋めていた範囲（辺数の境目、塗りの丸めと縁、色付きの半透明、drawClear のアルファ、drawTextBox の端） |
 | G | 格子のちょうど中間（1/512px）の丸め（F3 の続き） |
+| H | `onDraw`の中の`input`/`output`、`onTick`の中の`screen`（11節） |

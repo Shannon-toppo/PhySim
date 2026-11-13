@@ -269,7 +269,7 @@ test("the loop an agent runs: pose, inputs, step, read outputs, logs and the mon
   assert.equal(s.tick, 4);
   assert.deepEqual(s.pose.position, [5, 0, 0]);
   assert.deepEqual(s.outputs, { numbers: { 1: 10, 2: 130 }, booleansOn: [3] });
-  assert.deepEqual(s.logs.lines.map(l => [l.tick, l.text, l.file, l.line]), [[1, "hello from tick 1", MAIN, 10]]);
+  assert.deepEqual(s.logs.lines.map(l => [l.tick, l.text, l.file, l.line]), [[1, "hello from tick 1", MAIN.replace(/^[A-Z]:/, m => m.toLowerCase()), 10]]);
   assert.deepEqual(s.monitors, [{ number: 1, width: 96, height: 96, lit: 90, changedPixels: "first picture" }]);
 
   const io = await call("get_io");

@@ -94,7 +94,7 @@ test("breakpoint: stop, stack, scopes, variables, table expansion, evaluate, ste
 
   const { stackFrames } = await c.ok("stackTrace", { threadId: 1 });
   assert.equal(stackFrames[0].line, 6);
-  assert.equal(stackFrames[0].source.path, c.program);
+  assert.equal(stackFrames[0].source.path, c.program.replace(/^[A-Z]:/, m => m.toLowerCase()), "the engine reports a drive letter in lower case");
 
   const { scopes } = await c.ok("scopes", { frameId: stackFrames[0].id });
   assert.deepEqual(scopes.map(s => s.name), ["Locals", "Upvalues"]);

@@ -31,7 +31,7 @@ test("the endpoint is the same for the same folder and different for another", (
   assert.equal(a, mirrorEndpoint("/home/me/proj", "linux", "/home/me", 1000));
   assert.notEqual(a, mirrorEndpoint("/home/me/proj2", "linux", "/home/me", 1000));
   assert.notEqual(a, mirrorEndpoint("/home/me/Proj", "linux", "/home/me", 1000), "case matters off Windows");
-  assert.match(a, /^\/home\/me\/\.physim\/[0-9a-f]{16}\.sock$/);
+  assert.match(a.replace(/\\/g, "/"), /^\/home\/me\/\.physim\/[0-9a-f]{16}\.sock$/);
   assert.equal(path.basename(path.dirname(a)), MIRROR_DIR);
 });
 

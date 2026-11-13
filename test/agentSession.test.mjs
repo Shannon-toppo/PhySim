@@ -318,7 +318,7 @@ test("log lines carry tick, file and line; the cursor reads on; old lines are dr
     [0, 1, "print", "tick 1"], [1, 1, "debug.log", "dbg 1"], [2, 2, "print", "tick 2"]
   ]);
   assert.equal(first.more, 1);
-  assert.equal(first.lines[0].file, entry);
+  assert.equal(first.lines[0].file, entry.replace(/^[A-Z]:/, m => m.toLowerCase()), "the engine reports a drive letter in lower case");
   assert.equal(first.lines[0].line, 3);
   assert.equal(session.logCursor(), 4);
   assert.deepEqual(session.logsSince(3, 10).lines.map(l => l.text), ["dbg 2"]);

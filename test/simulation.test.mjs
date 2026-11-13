@@ -11,6 +11,7 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const { Simulation } = require("../out/simulation.js");
+const { chunkName } = require("../out/engine/sourceRoots.js");
 const { ZERO_STATE } = require("../out/engine/physState.js");
 
 const LUA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lua");
@@ -161,7 +162,7 @@ test("start() after a replaced run that was suspended at a breakpoint still runs
   sim.onStopped = r => stops.push(r);
   const src = `function onTick()\n  print("tick")\nend`;
   const req = request(src);
-  await sim.start({ ...req, breakpoints: [{ source: "@" + req.entry.replace(/\\/g, "/"), line: 2 }] });
+  await sim.start({ ...req, breakpoints: [{ source: chunkName(req.entry), line: 2 }] });
   await until(() => stops.length === 1, "the breakpoint");
   assert.equal(seen.logs.length, 0);
   await sim.start(request(`function onTick() print("fresh") end`));

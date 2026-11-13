@@ -9,6 +9,8 @@ const require = createRequire(import.meta.url);
 const { SourceRoots, chunkName, chunkFile, moduleSegments } = require("../out/engine/sourceRoots.js");
 
 const R = p => path.resolve(p);
+/** The engine reports a drive letter in lower case (chunkName / chunkFile). */
+const lowerDrive = f => f.replace(/^[A-Z]:/, m => m.toLowerCase());
 /** A roots object over a set of "existing" files (given as absolute-ish paths). */
 function over(roots, existing) {
   const set = new Set(existing.map(R));
@@ -95,7 +97,7 @@ test("chunkName is @-prefixed and forward-slashed", () => {
 
 test("chunkFile maps a file chunk back, and is null for non-files", () => {
   const file = path.resolve("/p/dir/main.lua");
-  assert.equal(chunkFile(chunkName(file)), path.normalize(file));
+  assert.equal(chunkFile(chunkName(file)), lowerDrive(path.normalize(file)));
   assert.equal(chunkFile("@physim:prelude"), null, "the built-in prelude is not a file");
   assert.equal(chunkFile("@physim:anything"), null);
   assert.equal(chunkFile("=stdin"), null);
@@ -108,10 +110,10 @@ test("chunkName/chunkFile round trip, including backslashes", () => {
   // Backslashes are the Windows separator; chunkName forward-slashes them and
   // chunkFile normalises back to the platform's own.
   const files = [path.resolve("/p/a.lua"), path.resolve("/p/with space/b.lua"), path.join("rel", "c.lua")];
-  for (const f of files) assert.equal(chunkFile(chunkName(f)), path.normalize(f), f);
+  for (const f of files) assert.equal(chunkFile(chunkName(f)), lowerDrive(path.normalize(f)), f);
   const win = "C:\\proj\\src\\main.lua";
   const back = chunkFile(chunkName(win));
   assert.equal(back, path.normalize("c:/proj/src/main.lua"));
-  if (path.sep === "\\") assert.equal(back, win);
+  if (path.sep === "\\") assert.equal(back, lowerDrive(win));
   assert.ok(!chunkName(win).includes("\\"));
 });

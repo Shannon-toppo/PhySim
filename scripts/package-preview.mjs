@@ -34,7 +34,7 @@ function previewReadme(text) {
 }
 
 const original = readFileSync(README);
-let status = 1;
+let status;
 try {
   writeFileSync(README, previewReadme(readFileSync(NEXT, "utf8")));
   const r = spawnSync("npx", ["vsce", "package", "--pre-release"],

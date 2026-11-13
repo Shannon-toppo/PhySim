@@ -173,6 +173,8 @@ The script runs in Storm Lua Engine's extended environment: the game's API (`inp
 plus `print`, `pcall` and `require`. Output from `print` and `debug.log` goes to the Debug Console,
 where clicking a line takes you to the call that wrote it.
 
+As in the game, call the `input` and `output` functions only inside `onTick` and the `screen` functions only inside `onDraw`. Calling `input.getNumber` inside `onDraw` stops the script with the game's own error, `attempting to use input function outside onTick`. Keep what the picture needs in variables set in `onTick`.
+
 A Lua error stops the script. The error appears in the Debug Console and as a notification,
 and the monitors keep the picture they had when it stopped. The run also ends when the script calls `simulator:exit()`.
 

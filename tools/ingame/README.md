@@ -375,19 +375,21 @@ y の中間の値を k − 1/512 に置くのは、塗りの行が floor(y) か�
 
 カードHだけは描画の規則ではなく、関数の挙動を調べる。`onDraw`の中で`input.*`や`output.*`を呼んだとき、また`onTick`の中で`screen.*`を呼んだときに、ゲームがどうするかを確かめる。
 
-考えられる結果は、ページごとに3通りある。普通に動く、何も返さない（0や`false`）、Luaのエラーでスクリプトが止まる、のどれかである。Storm Lua Engineは「何も返さない」と決めて実装しているが、エンジンの仕様書（`docs/specs/numeric-io.md`）には実機を測定していないとある。PhySimの挙動はエンジンに従うので、実機と違っていれば、PhySimでだけ動く、あるいはPhySimでだけ動かないスクリプトができる。
+考えられる結果は、ページごとに3通りある。普通に動く、何も返さない（0や`false`）、Luaのエラーでスクリプトが止まる、のどれかである。Storm Lua Engineは「何も返さない」と決めて実装している。実機で測ると、H2〜H7はどれもエラーで止まった（下の表）。PhySimは、エンジンが直るまで自分でエラーにしている。
 
-| ページ | 調べる呼び出し | エンジンの答え |
-|---|---|---|
-| H1 | 対照。危ない呼び出しはしない | `OK ok` |
-| H2 | `onDraw`の中の`input.getNumber(1)` | `OK n1=0.0`（モニターの幅は返らない） |
-| H3 | `onDraw`の中の`input.getBool(1)` | `OK b=false t=true` |
-| H4 | `onDraw`の中の`output.setNumber(1,123)` | `OK set 123`（エラーにならない。書き込みは捨てられる） |
-| H5 | `onDraw`の中の`output.setBool(1,true)` | `OK set true`（同上） |
-| H6 | `onTick`の中の`screen.getWidth()` | `OK w=0` |
-| H7 | `onTick`の中の`screen.drawRectF` | `OK drew`（エラーにならない。何も描かれない） |
+| ページ | 調べる呼び出し | 実機（2026-11-13、v1.15.26、Apple M5） | エンジン0.4.1だけの答え |
+|---|---|---|---|
+| H1 | 対照。危ない呼び出しはしない | `OK` | `OK ok` |
+| H2 | `onDraw`の中の`input.getNumber(1)` | エラー（draw error） | `OK n1=0.0`（モニターの幅は返らない） |
+| H3 | `onDraw`の中の`input.getBool(1)` | エラー（draw error） | `OK b=false t=true` |
+| H4 | `onDraw`の中の`output.setNumber(1,123)` | エラー（draw error） | `OK set 123`（エラーにならない。書き込みは捨てられる） |
+| H5 | `onDraw`の中の`output.setBool(1,true)` | エラー（draw error） | `OK set true`（同上） |
+| H6 | `onTick`の中の`screen.getWidth()` | エラー（tick error） | `OK w=0` |
+| H7 | `onTick`の中の`screen.drawRectF` | エラー（tick error） | `OK drew`（エラーにならない。何も描かれない） |
 
-「エンジンの答え」は`test/phaseCard.test.mjs`が固定している。
+実機ではH2〜H7がすべてエラーになり、エンジンとは6ページとも食い違った。エラー文は`attempting to use input function outside onTick`、`attempting to use screen function outside onDraw`の形で出る。詳しくは`doc/ingame-findings.md`の11節にある。
+
+PhySimは、エンジンが直るまでプレリュードで`input`、`output`、`screen`の関数を包み、実機と同じ文言でエラーにしている。`test/phaseCard.test.mjs`は、PhySimの答えが実機の列と同じであることを固定している。
 
 #### 操作
 

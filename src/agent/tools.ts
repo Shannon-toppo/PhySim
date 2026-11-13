@@ -280,7 +280,7 @@ export const SERVER_INSTRUCTIONS = [
   "To compare a monitor before and after an edit: save_snapshot, edit, start_script, step the same way, monitor_diff against the snapshot.",
   "Coordinates are Stormworks' left-handed frame: +X east, +Y up, +Z north. Rotations are Euler XYZ in radians. Velocities are per tick (60 ticks = 1 second).",
   "Monitor pixels: x right, y down, origin top-left. Colours are what is visible on the black monitor, as [r, g, b].",
-  "Rules of this simulator: input.* reads 0 inside onDraw, so store what the picture needs in onTick (whether the real game does the same has not been measured). print / require / the simulator object exist only in the simulator, so build_script rejects them outside a ---@section __LB_SIMULATOR_ONLY__ block."
+  "Rules of this simulator: as in the real game, input.* / output.* inside onDraw and screen.* inside onTick stop the script with an error, so call input/output only in onTick, screen only in onDraw, and keep what the picture needs in variables. print / require / the simulator object exist only in the simulator, so build_script rejects them outside a ---@section __LB_SIMULATOR_ONLY__ block."
 ].join(" ");
 
 export function createTools(env: ToolEnvironment): ToolDefinition[] {

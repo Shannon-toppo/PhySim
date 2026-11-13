@@ -229,6 +229,7 @@
     "lint": "eslint .",
     "check:media": "tsc -p tsconfig.media.json",
     "check:package": "npx --yes @vscode/vsce ls | node ./scripts/check-package.mjs",
+    "package:preview": "node ./scripts/package-preview.mjs",
     "test": "npm run compile && node --test \"test/**/*.test.mjs\"",
     "copy-three": "node ./scripts/copy-three.js",
     "postinstall": "npm run copy-three"

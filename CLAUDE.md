@@ -18,7 +18,8 @@ npm run lint               # eslint . (flat config, correctness rules only — n
 npm run check:media        # tsc -p tsconfig.media.json — strict checkJs over media/*.js (JSDoc types)
 npm test                   # compile + node --test test/**/*.test.mjs
 npm run check:package      # vsce ls piped into scripts/check-package.mjs — the .vsix has every runtime file (out/, media/, lua/, the engine's dist/) and no dev-only directory
-npx vsce package           # build physim-x.y.z.vsix for distribution
+npx vsce package           # build physim-x.y.z.vsix for distribution (1.x)
+npm run package:preview    # the 2.x preview .vsix: doc/next/README.md as its README, marked pre-release
 ```
 
 Node: the engine package declares `node >= 22.18`; npm test hands its glob to `node --test` (Node 21+); ESLint 10 needs 20.19+. CI uses Node 24.
@@ -303,7 +304,7 @@ User-facing host text is translated; the webview panel is not.
 
 The 2.x versions live beside them in `doc/next/`: `README.md` (Japanese), `README_en.md`, `CHANGELOG.md`. **Edit those.** Each opens with a one-line note saying what it is; when 2.x is released, the three files move to their usual paths (replacing the 1.x ones), the notes come out, the language links at the top go back to the absolute GitHub URLs, and `README_en.md`'s link to the changelog becomes `../CHANGELOG.md` again.
 
-One consequence to keep in mind: `.vscodeignore` leaves `doc/` out of the `.vsix`, so **a pre-release build carries the 1.x README** — a pre-release user reading the extension's page in VSCode sees 1.x instructions (LifeBoatAPI required, and so on). Whether to accept that or to swap the files in at packaging time is the maintainer's call and has not been decided.
+**Build the 2.x preview `.vsix` with `npm run package:preview`, not `npx vsce package`** (the maintainer's decision, 2026-11-13). `.vscodeignore` leaves `doc/` out, so a plain build carries the 1.x README. `scripts/package-preview.mjs` puts `doc/next/README.md` in place of the root `README.md` while `vsce package --pre-release` runs (vsce 2.15 has no README option) and always restores the 1.x file. In the copy, the repository-layout note becomes a preview note and the two links relative to `doc/next/` (`README_en.md`, `CHANGELOG.md`) become absolute GitHub URLs. The `.vsix`'s `CHANGELOG.md` is still the 1.x one.
 
 Japanese text in `doc/next/` is written without half-width spaces between Japanese and English words (the maintainer's choice, also 2026-11-13); the 1.x files keep the spaces they were published with.
 

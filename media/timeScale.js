@@ -5,14 +5,14 @@
 // tick contains. Velocities stay m/tick and rad/tick, CH13/14 keep their ×60
 // (that is game seconds), and the microcontroller simply sees the game run
 // slower. Both clocks are scaled together: simulation.js's integrator here,
-// and LifeBoatAPI's Lua tick loop via the RATE message (src/physServer.ts →
-// lua/PhySim.lua). Scaling only one of them would hand the microcontroller a
-// position that moves at a different rate than the velocity channels claim.
+// and the engine worker's tick loop (src/engine/worker.ts), which the host
+// sets from the same value. Scaling only one of them would hand the
+// microcontroller a position that moves at a different rate than the velocity
+// channels claim.
 //
-// Slow-down only: above 60 Hz LifeBoatAPI's main loop falls behind silently
-// when the user's code is heavy (it resets its timer instead of catching up).
+// Slow-down only: nothing above real time is offered.
 //
-// src/physServer.ts keeps its own copy of the list to validate webview
+// src/engine/physState.ts keeps its own copy of the list to validate webview
 // messages; test/timeScale.test.mjs asserts the two agree.
 
 /** Offered speeds, fastest first. 1 is real time. */

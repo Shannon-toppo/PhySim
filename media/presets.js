@@ -34,10 +34,17 @@ function isTriple(v) {
   return Array.isArray(v) && v.length === 3 && v.every(n => typeof n === "number" && Number.isFinite(n));
 }
 
-/** @param {import("./channels.js").PhysStateLike | undefined} s */
-export function applyPresetState(s) {
+/**
+ * Put a whole pose on the gizmo and the number inputs — a loaded preset, or
+ * the pose of an AI agent's run that the host is mirroring into this panel.
+ *
+ * @param {import("./channels.js").PhysStateLike | undefined} s
+ * @param {boolean} [keepTrail] true for a mirrored pose: the agent moves the
+ *   vehicle step by step, and the trail is how that movement shows.
+ */
+export function applyPresetState(s, keepTrail = false) {
   if (!s || !isTriple(s.position) || !isTriple(s.rotation) || !isTriple(s.velocity) || !isTriple(s.angularVelocity)) return;
-  resetTrail();   // loading a preset teleports; the old path would draw a jump
+  if (!keepTrail) resetTrail();   // loading a preset teleports; the old path would draw a jump
   targetGroup.position.set(s.position[0], s.position[1], s.position[2]);
   targetGroup.rotation.set(s.rotation[0], s.rotation[1], s.rotation[2]);
   numInputs.vx.value = String(s.velocity[0]);

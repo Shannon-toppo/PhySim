@@ -1,10 +1,11 @@
-// Runs lua/PhySim.lua inside fengari (Lua 5.3 semantics in pure JS — matches
-// the lua-debug runtime LifeBoatAPI uses, including two-arg math.atan).
+// Runs lua/PhySim.lua inside fengari (Lua 5.3 semantics in pure JS, f64 like
+// the engine's Lua numbers, including two-arg math.atan).
 //
-// PhySim.lua bails out at the top if the global `_physim_socket` is missing,
-// so we install a stub before loading the chunk. The stub's select() returns
-// an empty table, which makes PhySim:update()'s socket-drain loop exit
-// immediately — tests then feed bytes by writing PhySim._buf directly.
+// PhySim.lua reads the pose from the host callbacks `__physim_host.phys()` and
+// `__physim_host.tickRate()` and bails out at the top if that global is
+// missing, so a stub is installed before the chunk loads. The stub's phys()
+// returns whatever setState() last stored; tests then call PhySim:update() and
+// injectAsInputs() as a script would.
 //
 // All fengari stack juggling is confined to this file; tests interact through
 // plain-JS helpers that exchange numbers as `%.17g`-formatted strings (exact
@@ -22,55 +23,18 @@ const PHYSIM_LUA = path.join(
   path.dirname(fileURLToPath(import.meta.url)), "..", "..", "lua", "PhySim.lua"
 );
 
-/** Escape arbitrary bytes into a Lua short-string literal ("\ddd" escapes). */
-function luaStringLiteral(s) {
-  let out = '"';
-  for (let i = 0; i < s.length; i++) {
-    out += "\\" + s.charCodeAt(i);
-  }
-  return out + '"';
-}
-
 export class LuaPhySim {
-  /**
-   * @param {{ token?: string }} [opts] with `token`, the patched sandbox's
-   *   `_physim_token` is set and tcp() hands out a fake non-blocking socket
-   *   (see below) instead of the pre-connected `client = {}`.
-   */
-  constructor(opts = {}) {
+  constructor() {
     this.L = lauxlib.luaL_newstate();
     lualib.luaL_openlibs(this.L);
-    // Stub socket + load PhySim.lua. `client = {}` is truthy, so update()
-    // skips reconnecting; select() returning {} breaks the drain loop.
-    //
-    // The fake socket behaves like LuaSocket's non-blocking one: the first
-    // send() fails with "timeout" (connect still in flight), later ones take
-    // at most 5 bytes and report a partial send. What got through collects
-    // in `_sent`.
     this.run(`
-      _sent, _sendCalls = "", 0
-      _fakeSock = {
-        settimeout = function() end,
-        connect    = function() return nil, "timeout" end,
-        close      = function() end,
-        send       = function(self, data)
-          _sendCalls = _sendCalls + 1
-          if _sendCalls == 1 then return nil, "timeout", 0 end
-          local n = math.min(#data, 5)
-          _sent = _sent .. data:sub(1, n)
-          if n < #data then return nil, "timeout", n end
-          return n
-        end
-      }
-      _physim_socket = {
-        tcp    = function() ${opts.token ? "return _fakeSock" : 'return nil, "phySim test stub"'} end,
-        select = function() return {} end
+      _pose, _tickRate = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 60
+      __physim_host = {
+        phys     = function() return table.unpack(_pose, 1, 12) end,
+        tickRate = function() return _tickRate end
       }
     `);
-    if (opts.token) this.run(`_physim_token = ${luaStringLiteral(opts.token)}`);
-    const src = readFileSync(PHYSIM_LUA, "utf8");
-    this.run(src);
-    if (!opts.token) this.run(`PhySim.client = {}`);
+    this.run(readFileSync(PHYSIM_LUA, "utf8"));
   }
 
   /** Execute a chunk of Lua; throws on Lua errors. */
@@ -99,9 +63,10 @@ export class LuaPhySim {
     return out;
   }
 
-  /** Append raw bytes (a JS binary string) to PhySim._buf and run update(). */
-  feedAndUpdate(bytes) {
-    this.run(`PhySim._buf = PhySim._buf .. ${luaStringLiteral(bytes)}`);
+  /** Store the pose `phys()` will report and pull it in with PhySim:update(). */
+  feedAndUpdate(state, tickRate = 60) {
+    this.setState(state);
+    this.run(`_tickRate = ${String(tickRate)}`);
     this.run(`PhySim:update()`);
   }
 
@@ -124,18 +89,12 @@ export class LuaPhySim {
     };
   }
 
-  /** Overwrite PhySim._state directly (bypasses the wire protocol). */
+  /** Set what the stubbed `__physim_host.phys()` returns (no update() yet). */
   setState(state) {
     // String(number) round-trips JS doubles exactly and is a valid Lua 5.3
     // numeric literal for all finite values (e.g. "1e+21", "-0.25").
-    const set = (field, arr) =>
-      `PhySim._state.${field}[1], PhySim._state.${field}[2], PhySim._state.${field}[3] = ${String(arr[0])}, ${String(arr[1])}, ${String(arr[2])}`;
-    this.run([
-      set("position", state.position),
-      set("rotation", state.rotation),
-      set("velocity", state.velocity),
-      set("angularVelocity", state.angularVelocity)
-    ].join("\n"));
+    const n = [...state.position, ...state.rotation, ...state.velocity, ...state.angularVelocity];
+    this.run(`_pose = { ${n.map(String).join(", ")} }`);
   }
 
   /**

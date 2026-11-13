@@ -1,18 +1,14 @@
 // Monitor layout rules for the panel's multi-monitor support.
 //
-// LifeBoatAPI's Simulator keeps its screens in a plain `_screens` table keyed
-// by screen number, and its render loop walks *every* powered-on entry calling
-// onDraw() once per screen. Nothing about that is limited to one monitor — the
-// only reason a session normally shows a single 3x3 is that `_beginSimulation`
-// does `setScreen(1, "3x3")` and nobody adds more. So the panel can declare
-// extra monitors itself: `SCREENSIZE|n|w|h` creates screen n in Lua (its
-// handler does `_screens[n] = _screens[n] or SimulatorScreen:new(n)`), and
-// `SCREENPOWER|n|0|1` switches one off and on. src/simStubServer.ts sends
-// those; this module owns the rules both sides agree on.
+// The engine runs onDraw() once per powered-on monitor, and a run starts
+// with one 3x3 screen 1 unless something adds more. The panel can declare
+// extra monitors itself: it posts screenSet / screenRemove, and the host adds
+// them to the run's screen list (src/engine/screens.ts) and remembers the
+// layout for the next run. This module owns the rules both sides agree on.
 //
 // Pure — no DOM, no three, no vscode — so test/monitorConfig.test.mjs can run
-// it in Node, and test/simstub.test.mjs can check the host's copy of the size
-// table against SCREEN_SIZES here.
+// it in Node, and test/screens.test.mjs can check the host accepts every size
+// in SCREEN_SIZES here.
 
 /** Pixels per Stormworks monitor block. */
 export const PX_PER_BLOCK = 32;
@@ -29,10 +25,10 @@ export const SCREEN_SIZES = ["1x1", "2x1", "2x2", "3x2", "3x3", "5x3", "9x5"];
 export const DEFAULT_SIZE = "2x2";
 
 /**
- * Panel cap on how many monitors can be declared at once. Neither Stormworks
- * nor LifeBoatAPI enforces a number; this only keeps the panel (and the Lua
- * render loop, which runs onDraw once per screen per frame) from being handed
- * something absurd.
+ * Panel cap on how many monitors can be declared at once. Stormworks itself
+ * enforces no number; this only keeps the panel (and the engine, which runs
+ * onDraw once per screen per tick) from being handed something absurd. The
+ * host's MAX_SCREENS in src/engine/screens.ts mirrors it.
  */
 export const MAX_SCREENS = 8;
 
@@ -59,8 +55,7 @@ export function parseSize(size) {
 
 /**
  * Blocks to canvas pixels. Portrait stands the monitor on its end, which swaps
- * the two — the same swap `SimStubServer.applyScreenConfig` does for the size
- * LifeBoatAPI sends.
+ * the two — the same swap src/engine/screens.ts does on the host side.
  * @param {string} size
  * @param {boolean} portrait
  * @returns {{width: number, height: number}}

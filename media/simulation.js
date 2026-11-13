@@ -13,7 +13,8 @@
 // where it matters: playback stops simulation/recording, recording can't
 // start during playback.
 
-import { TICKS_PER_SEC, normalizeAngle } from "./channels.js";
+import { TICKS_PER_SEC } from "./channels.js";
+import { integrateTick } from "./integrator.js";
 import { simBtn, recBtn, playBtn, recCountEl, timeScaleSel, readNum, writeNum } from "./dom.js";
 import { targetGroup } from "./scene.js";
 import { syncInputsFromPose } from "./pose.js";
@@ -54,24 +55,22 @@ export function setSimulating(on) {
 export function toggleSimulating() { setSimulating(!simulating); }
 
 function integrateOneTick() {
-  // semi-implicit Euler: bump velocity by acceleration, then advance by velocity.
-  const vx = readNum("vx") + readNum("lax");
-  const vy = readNum("vy") + readNum("lay");
-  const vz = readNum("vz") + readNum("laz");
-  const ax = readNum("ax") + readNum("aax");
-  const ay = readNum("ay") + readNum("aay");
-  const az = readNum("az") + readNum("aaz");
-  writeNum("vx", vx); writeNum("vy", vy); writeNum("vz", vz);
-  writeNum("ax", ax); writeNum("ay", ay); writeNum("az", az);
-
-  targetGroup.position.x += vx;
-  targetGroup.position.y += vy;
-  targetGroup.position.z += vz;
-  // wrapped so a long spin doesn't leave the pose inputs reading 40 rad while
-  // CH4-6 (normalized in readState) read something else
-  targetGroup.rotation.x = normalizeAngle(targetGroup.rotation.x + ax);
-  targetGroup.rotation.y = normalizeAngle(targetGroup.rotation.y + ay);
-  targetGroup.rotation.z = normalizeAngle(targetGroup.rotation.z + az);
+  // The math is integrator.js's; this only moves it between the gizmo, the
+  // number inputs and back. The gizmo's own angles are read unwrapped, which
+  // integrateTick's wrap makes harmless.
+  const next = integrateTick({
+    position: [targetGroup.position.x, targetGroup.position.y, targetGroup.position.z],
+    rotation: [targetGroup.rotation.x, targetGroup.rotation.y, targetGroup.rotation.z],
+    velocity: [readNum("vx"), readNum("vy"), readNum("vz")],
+    angularVelocity: [readNum("ax"), readNum("ay"), readNum("az")]
+  }, {
+    linear: [readNum("lax"), readNum("lay"), readNum("laz")],
+    angular: [readNum("aax"), readNum("aay"), readNum("aaz")]
+  });
+  writeNum("vx", next.velocity[0]); writeNum("vy", next.velocity[1]); writeNum("vz", next.velocity[2]);
+  writeNum("ax", next.angularVelocity[0]); writeNum("ay", next.angularVelocity[1]); writeNum("az", next.angularVelocity[2]);
+  targetGroup.position.set(next.position[0], next.position[1], next.position[2]);
+  targetGroup.rotation.set(next.rotation[0], next.rotation[1], next.rotation[2]);
 
   sampleTrail();   // per tick, so a throttled rAF can't coarsen the trail
   // Both consumers want the post-integration state; read it once.

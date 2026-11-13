@@ -19,10 +19,6 @@
       <span>Monitors</span>
       <div class="monitor-opts">
         <button type="button" id="monitor-add" title="Declare another monitor for the microcontroller. The simulator runs onDraw once per screen, so screen.getWidth() tells them apart.">&#43; Monitor</button>
-        <label class="monitor-check" title="Undo the gamma correction LifeBoatAPI applies in Lua and draw the raw screen.setColor values. Off = the washed-out colours the game and the Windows simulator show.">
-          <input type="checkbox" id="monitor-truecolour" />
-          <span>True colour</span>
-        </label>
         <label class="monitor-zoom">
           <span>Zoom</span>
           <select id="monitor-zoom" title="Monitor scale. Fit = largest integer factor that fits the window width. Pinch the trackpad (or Ctrl/Cmd + wheel) over a monitor to zoom.">
@@ -35,6 +31,13 @@
       </div>
     </div>
     <div id="monitors-list"></div>
+    <!-- LifeBoatAPI's simulator buttons and sliders (media/controls.js). Hidden
+         until the running script reads one. -->
+    <div id="controls" class="hidden">
+      <div class="monitors-head"><span>Controls</span></div>
+      <div id="controls-buttons"></div>
+      <div id="controls-sliders"></div>
+    </div>
   </div>
 
   <script type="module" nonce="{{nonce}}" src="{{monitorsJs}}"></script>

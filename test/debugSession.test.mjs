@@ -123,7 +123,7 @@ test("breakpoint: stop, stack, scopes, variables, table expansion, evaluate, ste
   assert.deepEqual(await c.ok("continue", { threadId: 1 }), { allThreadsContinued: true });
   const out = await c.event("output");
   assert.equal(out.body.output, "n\t1\n");
-  assert.equal(out.body.source.path, c.program);
+  assert.equal(out.body.source.path, c.program.replace(/^[A-Z]:/, m => m.toLowerCase()));
   assert.equal(out.body.line, 7);
 });
 

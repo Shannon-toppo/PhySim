@@ -18,6 +18,9 @@ export const monitorsSection = mustGet("monitors");
 export const monitorsList = mustGet("monitors-list");
 export const monitorZoomEl = /** @type {HTMLSelectElement} */ (mustGet("monitor-zoom"));
 export const monitorAddEl = /** @type {HTMLButtonElement} */ (mustGet("monitor-add"));
+// "True colour", named as in 1.x: on (the default) shows the setColor values,
+// off shows LifeBoatAPI's colour lift (gamma.js). Display only.
+export const monitorTrueColourEl = /** @type {HTMLInputElement} */ (mustGet("monitor-truecolour"));
 // The simulator's buttons and sliders, below the monitors (controls.js).
 // Starts hidden; shown while the running script reads any.
 export const controlsSection = mustGet("controls");

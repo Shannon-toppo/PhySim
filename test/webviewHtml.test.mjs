@@ -34,8 +34,9 @@ const panelIds = [...requested];
 delete globalThis.document;
 
 test("the registries were really exercised", () => {
-  // The four monitor elements, and the three of the buttons-and-sliders block below them.
-  assert.equal(monitorIds.length, 7);
+  // The five monitor elements, and the three of the buttons-and-sliders block below them.
+  assert.equal(monitorIds.length, 8);
+  assert.ok(monitorIds.includes("monitor-truecolour"));
   for (const id of ["controls", "controls-buttons", "controls-sliders"]) assert.ok(monitorIds.includes(id), id);
   assert.ok(panelIds.length > 50, `only ${panelIds.length} lookups recorded`);
   assert.ok(panelIds.includes("c17") && panelIds.includes("aaz-num"));

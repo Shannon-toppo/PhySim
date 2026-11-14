@@ -545,6 +545,7 @@ Details of the verification are in [`doc/ingame-findings.md`](https://github.com
 
 Colours are shown as passed to `screen.setColor`. Translucent colours are blended with the game's formula.
 1.x and LifeBoatAPI's simulator applied a correction that lifts dark colours; 2.0.0 no longer does, so the same script looks darker than in 1.x.
+**True colour** in the Monitors header is on by default in 2.0.0. Turn it off to show the colours with 1.x's correction. It changes the display only: the script and the AI agent see the same pixels either way.
 
 Not reproduced:
 
@@ -683,7 +684,7 @@ What keeps working
 What changed
 - LifeBoatAPI's library (LBVec and so on) is not bundled. A project created with LifeBoatAPI has the library in the workspace's `_build/libs`, which PhySim searches automatically. If yours is somewhere else, add that folder to `physim.libraryPaths`
 - There is no LifeBoatAPI simulator window. The buttons and sliders it had appear below the monitors in PhySim's panel (see "Buttons and sliders"). `setFrameRate` does nothing
-- Monitor colours are no longer corrected (see "Monitors")
+- Monitor colours are no longer corrected by default; turning off **True colour** in the Monitors header brings 1.x's correction back (see "Monitors")
 - The simulation speed now applies to scripts that never call `phys:injectAsInputs` as well
 - Debugging uses PhySim's debugger (see "Debugging")
 - PhySim no longer modifies `_build/_simulator.lua`, and no longer writes a library path into your settings for editor completion

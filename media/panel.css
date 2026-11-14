@@ -288,6 +288,23 @@ body.monitors-sized #monitors { max-height: none; }
   gap: 12px;
 }
 
+.monitor-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.monitor-check input {
+  margin: 0;
+  accent-color: var(--vscode-focusBorder, #007fd4);
+}
+
 .monitor-zoom {
   display: flex;
   align-items: center;

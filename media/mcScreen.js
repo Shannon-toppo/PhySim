@@ -45,8 +45,9 @@
 // it uploads nothing until it is visible again.
 
 import {
-  monitorsSection, monitorsList, monitorZoomEl, monitorAddEl
+  monitorsSection, monitorsList, monitorZoomEl, monitorAddEl, monitorTrueColourEl
 } from "./monitorDom.js";
+import { liftFrame } from "./gamma.js";
 import { sendTouch, sendScreenSet, sendScreenRemove } from "./monitorMessaging.js";
 import {
   SCREEN_SIZES, DEFAULT_SIZE, MAX_SCREENS, nextScreenNumber, pixelsToSize, fitScale
@@ -79,6 +80,7 @@ import {
  * @property {CanvasRenderingContext2D} ctx
  * @property {ImageData} img the upload buffer, reused for every frame
  * @property {Uint8Array | null} pending the newest frame not yet uploaded
+ * @property {Uint8Array | null} shown the frame on the canvas, as the engine drew it (kept so the True colour toggle can redraw it)
  * @property {HTMLElement} name the "Screen 1 - 96x96 - 4x" caption
  * @property {HTMLSelectElement} sizeEl
  * @property {HTMLInputElement} portraitEl
@@ -460,7 +462,7 @@ function createMonitor(num, w, h, info) {
 
   attachTouch(canvas, num);
   /** @type {Monitor} */
-  const m = { canvas, ctx, img, pending: null, name, sizeEl, portraitEl, info };
+  const m = { canvas, ctx, img, pending: null, shown: null, name, sizeEl, portraitEl, info };
   syncControls(m);
 
   // The host is what actually changes anything; the controls only ask. It
@@ -576,14 +578,30 @@ function scheduleRepaint() {
 function repaint() {
   for (const m of monitors.values()) {
     if (!m.pending) continue;
-    // Copied as they are: the bytes are already straight RGBA, which is what
-    // ImageData holds. See the top of this file for why no alpha or gamma
-    // step belongs here.
-    m.img.data.set(m.pending);
+    m.shown = m.pending;
     m.pending = null;
-    m.ctx.putImageData(m.img, 0, 0);
+    upload(m);
   }
 }
+
+/**
+ * Put `m.shown` on the canvas. The bytes are copied as they are — they are
+ * already straight RGBA, which is what ImageData holds (see the top of this
+ * file) — unless "True colour" is off, which asks for LifeBoatAPI's colour
+ * lift (gamma.js), which is a display choice and never reaches the engine.
+ * @param {Monitor} m
+ */
+function upload(m) {
+  if (!m.shown) return;
+  if (monitorTrueColourEl.checked) m.img.data.set(m.shown);
+  else liftFrame(m.shown, m.img.data);
+  m.ctx.putImageData(m.img, 0, 0);
+}
+
+// Redraw what is already shown, so the option takes effect without a new frame.
+monitorTrueColourEl.addEventListener("change", () => {
+  for (const m of monitors.values()) upload(m);
+});
 
 // --- Pointer input ---------------------------------------------------------
 

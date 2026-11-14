@@ -14,7 +14,7 @@ PhySimがマイコンのLuaを自分で実行するようになりました。Lu
 - LifeBoatAPI（`NameousChangey.lifeboatapi`）に依存しなくなりました。PhySimを入れてもLifeBoatAPIは一緒に入りません。スクリプトはLifeBoatAPIのF6ではなく、PhySimの`PhySim: Run`（F6）で実行します。
 - PhySimのF6（実行）とF7（ビルド）はLifeBoatAPIと同じキーです。両方を入れていると競合します。設定`physim.keybindings.useF6F7`をオフにすると、PhySimはF6とF7を使わなくなります。Shift+F6（実行）とShift+F7（ビルド）は、設定に関係なく使えます。
 - LifeBoatAPIのLuaライブラリ（LBVecなど）は同梱していません。LifeBoatAPIで作ったプロジェクトなら、ワークスペースの`_build/libs`にライブラリがあり、PhySimはそこを自動で探します。別の場所に置いている場合は、そのフォルダを`physim.libraryPaths`に追加してください。
-- モニターの色に、LifeBoatAPIと同じ明るさの補正をかけなくなりました。`setColor`に渡した値のまま表示するので、1.xより暗く見えます。MonitorsヘッダーのTrue colourは無くなりました。
+- モニターの色に、LifeBoatAPIと同じ明るさの補正をかけなくなりました。`setColor`に渡した値のまま表示するので、1.xより暗く見えます。MonitorsヘッダーのTrue colourは最初からオンになりました。1.xと同じ明るさで見たいときは、True colourをオフにします。
 - 設定`physim.port`、`physim.autoInjectLibraryPath`、`physim.monitors.useBuiltInOnWindows`を削除しました。
 - エディタの補完用に、同梱の`lua/`を`lifeboatapi.stormworks.libs.libraryPaths`へ書き込む処理を削除しました。
 - `simulator:setFrameRate`は何もしません。実行の速さはパネルのシミュレーション速度で決まります。

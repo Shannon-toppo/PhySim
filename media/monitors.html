@@ -19,6 +19,10 @@
       <span>Monitors</span>
       <div class="monitor-opts">
         <button type="button" id="monitor-add" title="Declare another monitor for the microcontroller. The simulator runs onDraw once per screen, so screen.getWidth() tells them apart.">&#43; Monitor</button>
+        <label class="monitor-check" title="On = the screen.setColor values as they are. Off = brighter, as LifeBoatAPI's simulator and PhySim 1.x showed them (each channel 255 &#215; ((c/255)/0.85)^(1/2.4)). Display only: the script, the frames and the AI tools are not affected.">
+          <input type="checkbox" id="monitor-truecolour" checked />
+          <span>True colour</span>
+        </label>
         <label class="monitor-zoom">
           <span>Zoom</span>
           <select id="monitor-zoom" title="Monitor scale. Fit = largest integer factor that fits the window width. Pinch the trackpad (or Ctrl/Cmd + wheel) over a monitor to zoom.">

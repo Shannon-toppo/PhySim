@@ -240,14 +240,19 @@
     "@types/node": "^22.0.0",
     "@types/three": "^0.160.0",
     "@types/vscode": "^1.101.0",
-    "eslint": "^10.6.0",
+    "eslint": "^10.15.0",
     "fengari": "^0.1.5",
     "globals": "^17.7.0",
     "three": "^0.160.0",
     "typescript": "^5.4.0",
-    "typescript-eslint": "^8.62.1"
+    "typescript-eslint": "^8.72.2"
   },
   "dependencies": {
     "@stormcat-works/storm-lua-engine": "0.4.1"
+  },
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.5"
+    }
   }
 }

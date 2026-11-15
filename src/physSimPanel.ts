@@ -649,7 +649,7 @@ export class PhysSimPanelManager {
 
     // The markup lives in media/*.html (the authoritative templates).
     // Reading it with node fs keeps this extension desktop-only — which it
-    // already is (TCP server, _simulator.lua patching).
+    // already is (worker threads, the engine's WASM read from disk).
     const templatePath = vscode.Uri.joinPath(this.ctx.extensionUri, "media", page).fsPath;
     const template = fs.readFileSync(templatePath, "utf8");
     return substituteTemplate(template, {

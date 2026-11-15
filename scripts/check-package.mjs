@@ -45,7 +45,11 @@ const forbidden = [
 
 const listed = new Set(readFileSync(0, "utf8").split(/\r?\n/).map(l => l.trim().replace(/\\/g, "/")));
 const missing = required.filter(f => !listed.has(f));
-const unwanted = [...listed].filter(f => !f.includes(" ") && forbidden.some(re => re.test(f)));
+// tsc never removes the output of a source file that was deleted, so an out/
+// that has lived through a refactor still holds the old modules.
+const wanted = new Set(required);
+const unwanted = [...listed].filter(f => !f.includes(" ") &&
+  (forbidden.some(re => re.test(f)) || (/^out\/.*\.js$/.test(f) && !wanted.has(f))));
 
 for (const f of missing) console.error(`missing from the package: ${f}`);
 for (const f of unwanted) console.error(`should not be packaged: ${f}`);

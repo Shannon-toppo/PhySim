@@ -27,7 +27,7 @@ npm run watch        # 変更を監視してビルド
 配布用の `.vsix` は次のコマンドで作れます。
 
 ```bash
-npx vsce package
+npm run package:preview   # 2.x のプレビュー版（doc/next/ の README と CHANGELOG を入れる）
 npm run check:package   # .vsix に必要なファイル（Storm Lua Engine の dist/ を含む）が入っているかを確かめる
 ```
 

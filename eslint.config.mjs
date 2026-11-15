@@ -44,7 +44,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ["test/**/*.mjs", "scripts/**/*.mjs"],
+    files: ["test/**/*.mjs", "scripts/**/*.mjs", "tools/**/*.mjs"],
     extends: [js.configs.recommended],
     languageOptions: {
       sourceType: "module",

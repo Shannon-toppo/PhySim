@@ -730,7 +730,7 @@ PhySim bundles the following software.
 
 The full license text of Storm Lua Engine, and the licenses of the components it contains, are bundled in the extension under
 `node_modules/@stormcat-works/storm-lua-engine/`.
-For the full three.js license text, see [the three.js repository](https://github.com/mrdoob/three.js/blob/r160/LICENSE).
+The full three.js license text is in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md), which is bundled with the extension.
 
 ### Disclaimer
 

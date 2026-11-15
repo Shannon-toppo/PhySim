@@ -38,7 +38,7 @@ const required = [
 ];
 
 const forbidden = [
-  /^(src|test|doc|tools|scripts|\.github|\.vscode|\.claude)\//,
+  /^(src|test|doc|tools|scripts|_build|\.github|\.vscode|\.claude)\//,
   /^node_modules\/(?!@stormcat-works\/storm-lua-engine\/)/,
   /\.(ts|map|vsix)$/
 ];

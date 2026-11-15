@@ -39,3 +39,44 @@ FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
+
+## three.js
+
+- Project: three.js r160, by the three.js authors (https://github.com/mrdoob/three.js)
+- Used in: `media/three/three.module.js`, `media/three/addons/controls/OrbitControls.js`
+  and `media/three/addons/controls/TransformControls.js`, copied unmodified from the
+  `three` npm package by `scripts/copy-three.js`.
+- License: MIT License, as included with the `three` npm package 0.160.1:
+
+```
+The MIT License
+
+Copyright © 2010-2023 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+## Storm Lua Engine
+
+- Project: Storm Lua Engine 0.4.1, by the Stormcat-Works contributors
+  (https://github.com/Stormcat-Works/storm-lua-engine)
+- Used in: `node_modules/@stormcat-works/storm-lua-engine/`, bundled as published on npm.
+- License: MIT License. The full text is in that directory's `LICENSE`, and the licenses
+  of the components the engine includes are in its `THIRD_PARTY_LICENSES.txt`,
+  `SCREEN_COMPONENTS_LICENSE`, `RUST_STD_LICENSES.html` and `TOOLCHAIN_LICENSES.txt`.

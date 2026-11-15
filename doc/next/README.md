@@ -732,7 +732,7 @@ PhySimには次のソフトウェアが同梱されています。
 
 Storm Lua Engineのライセンス全文と、エンジンが含むコンポーネントのライセンスは、拡張機能内の
 `node_modules/@stormcat-works/storm-lua-engine/`に同梱しています。
-three.jsのライセンス全文は[three.jsのリポジトリ](https://github.com/mrdoob/three.js/blob/r160/LICENSE)を参照してください。
+three.jsのライセンス全文は、拡張機能に同梱している[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)に載せています。
 
 ### 免責
 

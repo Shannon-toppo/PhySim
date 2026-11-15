@@ -6,7 +6,14 @@ PhySimの主な変更点です。各バージョンの詳細は[GitHub Releases]
 
 ## [Unreleased]
 
-## [2.0.0] - 未リリース
+## [2.0.1] - 未リリース
+
+### 修正
+- 同梱しているthree.jsのライセンス全文を、`THIRD_PARTY_NOTICES.md`に載せました。2.0.0ではthree.jsのリポジトリへのリンクだけでした。`THIRD_PARTY_NOTICES.md`にはStorm Lua Engineの項目も追加しました。
+- 拡張機能の変更履歴タブに1.xの変更履歴が出ていたので、2.xの変更履歴を出すようにしました。
+- 開発用のファイル（`_build/`）が拡張機能に入っていたので、取り除きました。
+
+## [2.0.0] - 2026-11-15
 
 PhySimがマイコンのLuaを自分で実行するようになりました。Luaの実行には[Storm Lua Engine](https://www.npmjs.com/package/@stormcat-works/storm-lua-engine) 0.4.1を使います。LifeBoatAPIは不要になり、Windows・macOS・Linuxで同じ実装が動きます。
 
@@ -186,7 +193,8 @@ VS Code Marketplaceで公開した最初のバージョンです（プレビュ�
 
 - 最初の公開版。
 
-[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/1.2.1...HEAD
+[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/2.0.1...HEAD
+[2.0.1]: https://github.com/Shannon-toppo/PhySim/releases/tag/2.0.1
 [2.0.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/2.0.0
 [1.2.1]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.2.1
 [1.2.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.2.0

@@ -6,7 +6,13 @@ PhySimの主な変更点です。各バージョンの詳細は[GitHub Releases]
 
 ## [Unreleased]
 
-## [2.0.1] - 未リリース
+## [2.0.2] - 未リリース
+
+### 修正
+- 使われていないコードを削除しました。動作は2.0.1と同じです。
+- 拡張機能のパッケージを作るときに、削除済みのソースからできた古いファイルが入らないようにしました。
+
+## [2.0.1] - 2026-11-15
 
 ### 修正
 - 同梱しているthree.jsのライセンス全文を、`THIRD_PARTY_NOTICES.md`に載せました。2.0.0ではthree.jsのリポジトリへのリンクだけでした。`THIRD_PARTY_NOTICES.md`にはStorm Lua Engineの項目も追加しました。
@@ -193,7 +199,8 @@ VS Code Marketplaceで公開した最初のバージョンです（プレビュ�
 
 - 最初の公開版。
 
-[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/2.0.1...HEAD
+[Unreleased]: https://github.com/Shannon-toppo/PhySim/compare/2.0.2...HEAD
+[2.0.2]: https://github.com/Shannon-toppo/PhySim/releases/tag/2.0.2
 [2.0.1]: https://github.com/Shannon-toppo/PhySim/releases/tag/2.0.1
 [2.0.0]: https://github.com/Shannon-toppo/PhySim/releases/tag/2.0.0
 [1.2.1]: https://github.com/Shannon-toppo/PhySim/releases/tag/1.2.1

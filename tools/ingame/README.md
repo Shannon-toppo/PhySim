@@ -429,7 +429,6 @@ H4とH5は、エラーになるかどうかしか画面からは分からない�
 ```bash
 node tools/ingame/analysis/rectify.mjs <shot.png> <out.ppm>   # 復元 + 較正残差を表示
 node tools/ingame/analysis/show.mjs    <shot.png> 150 28 76   # 点灯画素をASCIIで表示
-node tools/ingame/analysis/compare.mjs <shot.png> <expected.ppm> # 期待画像との差分
 node tools/ingame/analysis/export-fixture.mjs <macPngDir> <winPngDir> test/fixtures/ingame-raster.json
 node tools/ingame/analysis/ties.mjs    <G1.png> [G2.png G3.png ...]  # G の丸めの向きを読む
 ```

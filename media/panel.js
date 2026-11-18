@@ -148,7 +148,6 @@ window.addEventListener("message", e => {
   const msg = e.data;
   if (!msg) return;
   if (msg.type === "reset") resetGizmo();
-  else if (msg.type === "setMode") setMode(msg.mode);
   else if (msg.type === "presetList") renderPresetList(Array.isArray(msg.names) ? msg.names : []);
   else if (msg.type === "presetLoaded") applyPresetState(msg.state);
   // An AI agent's run, mirrored by the host: its pose replaces whatever the

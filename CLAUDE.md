@@ -17,8 +17,8 @@ npm run watch              # tsc --watch
 npm run lint               # eslint . (flat config, correctness rules only — no formatter)
 npm run check:media        # tsc -p tsconfig.media.json — strict checkJs over media/*.js (JSDoc types)
 npm test                   # compile + node --test test/**/*.test.mjs
-npm run check:package      # vsce ls piped into scripts/check-package.mjs — the .vsix has every runtime file (out/, media/, lua/, the engine's dist/) and no dev-only directory
-npx vsce package           # build physim-x.y.z.vsix for distribution (1.x)
+npm run check:package      # vsce ls piped into scripts/check-package.mjs — the .vsix has every runtime file (out/, media/, lua/, the engine's dist/), no dev-only directory, and no out/*.js left over from a deleted source file
+npx vsce package           # build physim-x.y.z.vsix for distribution (1.x); vsce is a devDependency (@vscode/vsce)
 npm run package:preview    # the 2.x preview .vsix: doc/next/README.md as its README, marked pre-release
 ```
 
@@ -306,7 +306,7 @@ User-facing host text is translated; the webview panel is not.
 
 The 2.x versions live beside them in `doc/next/`: `README.md` (Japanese), `README_en.md`, `CHANGELOG.md`. **Edit those.** Each opens with a one-line note saying what it is; when 2.x is released, the three files move to their usual paths (replacing the 1.x ones), the notes come out, the language links at the top go back to the absolute GitHub URLs, and `README_en.md`'s link to the changelog becomes `../CHANGELOG.md` again.
 
-**Build the 2.x preview `.vsix` with `npm run package:preview`, not `npx vsce package`** (the maintainer's decision, 2026-11-13). `.vscodeignore` leaves `doc/` out, so a plain build carries the 1.x README. `scripts/package-preview.mjs` puts `doc/next/README.md` in place of the root `README.md` while `vsce package --pre-release` runs (vsce 2.15 has no README option) and always restores the 1.x file. In the copy, the repository-layout note becomes a preview note and the two links relative to `doc/next/` (`README_en.md`, `CHANGELOG.md`) become absolute GitHub URLs. The `.vsix`'s `CHANGELOG.md` is still the 1.x one.
+**Build the 2.x preview `.vsix` with `npm run package:preview`, not `npx vsce package`** (the maintainer's decision, 2026-11-13). `.vscodeignore` leaves `doc/` out, so a plain build carries the 1.x README. `scripts/package-preview.mjs` puts `doc/next/README.md` and `doc/next/CHANGELOG.md` in place of the root files while `vsce package --pre-release` runs and always restores the 1.x files. (vsce's `--readme-path` does not help: it refuses a README outside the packaged files, and one inside collides with the root `README.md`.) In the copy, the repository-layout note becomes a preview note and the two links relative to `doc/next/` (`README_en.md`, `CHANGELOG.md`) become absolute GitHub URLs.
 
 Japanese text in `doc/next/` is written without half-width spaces between Japanese and English words (the maintainer's choice, also 2026-11-13); the 1.x files keep the spaces they were published with.
 
@@ -314,18 +314,20 @@ Japanese text in `doc/next/` is written without half-width spaces between Japane
 
 The extension is published on the VS Code Marketplace as `shannon-toppo.physim` (first published 2026-09-24; the `"preview"` flag was dropped in 1.2.0). Since 2.0.0 it has no `extensionDependencies`. The one runtime dependency, `@stormcat-works/storm-lua-engine`, is packaged from `node_modules/`: `.vscodeignore` excludes `node_modules/**` and re-includes the engine's `package.json`, license files and `dist/**/*.js|*.wasm|package.json`; `scripts/check-package.mjs` fails if any of the runtime/compiler WASM files or `out/engine/*.js` is missing.
 
-`engines.vscode` is `^1.101.0` because the engine package asks for Node ≥ 22.18 — see "Open items".
+`vscode:prepublish` empties `out/` before compiling (`npm run clean`): tsc never deletes the output of a removed source file, and `vsce` would package it.
+
+`engines.vscode` is `^1.101.0` (and `@types/vscode` is held at `~1.101.0`, so an API newer than the declared minimum does not compile) because the engine package asks for Node ≥ 22.18 — see "Open items".
 
 Releases are uploaded by hand: `npx vsce package`, then upload the `.vsix` at https://marketplace.visualstudio.com/manage (the extension's "…" menu → Update). Marketplace refuses a version it already has, so bump `version` in `package.json` for every release. CI runs `npm run check:package` on the file list; it only sees tracked files, so check `npx vsce ls` for stray untracked ones before packaging locally. The same `.vsix` can also be attached to a GitHub Release.
 
-There is no `vsce publish` from the CLI or CI yet. Azure DevOps retires global PATs on 2026-12-01, so don't set one up; automating this means `vsce publish --azure-credential` (vsce >= 2.26.1) with a user-assigned managed identity federated to GitHub Actions. The locally resolved vsce is 2.15.0, which is too old for that flag.
+There is no `vsce publish` from the CLI or CI yet. Azure DevOps retires global PATs on 2026-12-01, so don't set one up; automating this means `vsce publish --azure-credential` (vsce >= 2.26.1) with a user-assigned managed identity federated to GitHub Actions. The repository's vsce (`@vscode/vsce` 4.x, a devDependency) has that flag.
 
 ## Open items (2.0.0)
 
 - **Calls in the wrong phase — guarded in PhySim until the engine errors itself.** See "Calls in the wrong phase" above. Unmeasured in the game: calls at the top level (outside both callbacks), and the exact `output` message. When an engine release raises these errors, take the guard out of `prelude.ts` (`phaseCard.test.mjs` and the `engineRunner` test keep pinning the behaviour).
 
 - **Minimum VSCode.** Which VSCode release first ships an extension-host Node ≥ 22.18 (the engine's `engines.node`) has not been verified; `^1.101.0` is a placeholder until it is.
-- **Nothing has been run in a real VSCode window yet.** Implemented but unchecked: the webview painting `screenPixels` frames, the debug UI (breakpoints, stepping, Variables, hover, Debug Console source links), the F6/F7 keybindings and the editor-title Run/Stop buttons, the configuration provider on F5, `saveAll` before run/build, the build notifications and Problems view, the `.vsix` contents loading the WASM after installation.
+- **Most of the UI has not been run in a real VSCode window.** The panel mirror has (see "AI tools" below). Implemented but unchecked: the webview painting `screenPixels` frames, the debug UI (breakpoints, stepping, Variables, hover, Debug Console source links), the F6/F7 keybindings and the editor-title Run/Stop buttons, the configuration provider on F5, `saveAll` before run/build, the build notifications and Problems view, the `.vsix` contents loading the WASM after installation.
 - **Platforms.** Only macOS/Node tests have been run. Windows and Linux are expected to work (no per-OS code), and CI's matrix covers all three for the Node tests, but nothing has been checked in VSCode there.
 - **AI tools (beta).** Stage 1 works from a real agent (Claude Code, macOS, confirmed by the user on 2026-11-12). Stage 2, the panel mirror, works in a real window too (monitors and gizmo following the agent, macOS, confirmed by the user on 2026-11-13). Unchecked: the named-pipe path on a real Windows machine, and either stage on Windows/Linux or from an installed `.vsix`.
 - **Buttons and sliders.** The `Controls` block below the monitors (`media/controls.js`) is covered only up to the host: the webview drawing it, pointer capture on a held button, the block following the monitor window, and the read-only display of an agent's controls have not been tried in a window. Neither has the toolbar's wrapping (`#toolbar` in `panel.css`: `flex-wrap`, no-break labels, the hint cut with an ellipsis, and below 760px replaced by a "?" whose bubble — CSS only, on hover or focus — shows the same text).

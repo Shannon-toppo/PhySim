@@ -18,8 +18,7 @@
  */
 export const MIN_STEP_SQ = 1e-6;
 
-/** Selectable trail lengths, in samples (one sample per tick at 60 Hz). */
-export const TRAIL_CAPACITIES = [120, 300, 600, 1800];
+/** Trail length in samples (one per tick at 60 Hz) until the panel's dropdown says otherwise. */
 export const DEFAULT_CAPACITY = 300;
 
 /**

@@ -40,8 +40,6 @@ let playIndex = 0;
 let lastPlayTime = 0;
 let playAccumulator = 0;
 
-export function isSimulating() { return simulating; }
-
 /** @param {boolean} on */
 export function setSimulating(on) {
   if (simulating === on) return;
